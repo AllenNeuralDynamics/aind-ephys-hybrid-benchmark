@@ -1,5 +1,5 @@
 #!/usr/bin/env nextflow
-// hash:sha256:040b9fbb7975b69545352b0a2692db259ad43f83179115e1e5c0552accaee05b
+// hash:sha256:c2f945eec324d57a4353fffa4bc9c346056b725d3d1626650aebd5928ec0aff7
 
 nextflow.enable.dsl = 1
 
@@ -12,12 +12,10 @@ capsule_hybrid_generation_ecephys_2_to_capsule_preprocess_ecephys_3_4 = channel.
 ecephys_to_preprocess_ecephys_5 = channel.fromPath(params.ecephys_url + "/", type: 'any')
 capsule_preprocess_ecephys_3_to_capsule_spikesort_kilosort_25_ecephys_4_6 = channel.create()
 capsule_preprocess_ecephys_3_to_capsule_spikesort_kilosort_4_ecephys_5_7 = channel.create()
-capsule_spikesort_spyking_circus_2_ecephys_7_to_capsule_hybrid_evaluation_ecephys_6_8 = channel.create()
-ecephys_to_hybrid_evaluation_ecephys_9 = channel.fromPath(params.ecephys_url + "/", type: 'any')
-capsule_hybrid_generation_ecephys_2_to_capsule_hybrid_evaluation_ecephys_6_10 = channel.create()
-capsule_spikesort_kilosort_4_ecephys_5_to_capsule_hybrid_evaluation_ecephys_6_11 = channel.create()
-capsule_spikesort_kilosort_25_ecephys_4_to_capsule_hybrid_evaluation_ecephys_6_12 = channel.create()
-capsule_preprocess_ecephys_3_to_capsule_spikesort_spyking_circus_2_ecephys_7_13 = channel.create()
+ecephys_to_hybrid_evaluation_ecephys_8 = channel.fromPath(params.ecephys_url + "/", type: 'any')
+capsule_hybrid_generation_ecephys_2_to_capsule_hybrid_evaluation_ecephys_6_9 = channel.create()
+capsule_spikesort_kilosort_4_ecephys_5_to_capsule_hybrid_evaluation_ecephys_6_10 = channel.create()
+capsule_spikesort_kilosort_25_ecephys_4_to_capsule_hybrid_evaluation_ecephys_6_11 = channel.create()
 
 // capsule - Job Dispatch Ecephys
 process capsule_job_dispatch_ecephys_1 {
@@ -76,7 +74,7 @@ process capsule_hybrid_generation_ecephys_2 {
 
 	output:
 	path 'capsule/results/recordings/*' into capsule_hybrid_generation_ecephys_2_to_capsule_preprocess_ecephys_3_4
-	path 'capsule/results/flattened/*' into capsule_hybrid_generation_ecephys_2_to_capsule_hybrid_evaluation_ecephys_6_10
+	path 'capsule/results/flattened/*' into capsule_hybrid_generation_ecephys_2_to_capsule_hybrid_evaluation_ecephys_6_9
 
 	script:
 	"""
@@ -94,7 +92,7 @@ process capsule_hybrid_generation_ecephys_2 {
 
 	echo "[${task.tag}] cloning git repo..."
 	git clone "https://\$GIT_ACCESS_TOKEN@\$GIT_HOST/capsule-9051504.git" capsule-repo
-	git -C capsule-repo checkout 912a3bc5c067df74f5c82eef1e35fbe95e4fc4f5 --quiet
+	git -C capsule-repo checkout f4876ef80ed4d2538bde75708c333e2106bc9865 --quiet
 	mv capsule-repo/code capsule/code
 	rm -rf capsule-repo
 
@@ -122,7 +120,6 @@ process capsule_preprocess_ecephys_3 {
 	output:
 	path 'capsule/results/*' into capsule_preprocess_ecephys_3_to_capsule_spikesort_kilosort_25_ecephys_4_6
 	path 'capsule/results/*' into capsule_preprocess_ecephys_3_to_capsule_spikesort_kilosort_4_ecephys_5_7
-	path 'capsule/results/*' into capsule_preprocess_ecephys_3_to_capsule_spikesort_spyking_circus_2_ecephys_7_13
 
 	script:
 	"""
@@ -167,7 +164,7 @@ process capsule_spikesort_kilosort_25_ecephys_4 {
 	path 'capsule/data/' from capsule_preprocess_ecephys_3_to_capsule_spikesort_kilosort_25_ecephys_4_6
 
 	output:
-	path 'capsule/results/*' into capsule_spikesort_kilosort_25_ecephys_4_to_capsule_hybrid_evaluation_ecephys_6_12
+	path 'capsule/results/*' into capsule_spikesort_kilosort_25_ecephys_4_to_capsule_hybrid_evaluation_ecephys_6_11
 
 	script:
 	"""
@@ -185,7 +182,7 @@ process capsule_spikesort_kilosort_25_ecephys_4 {
 
 	echo "[${task.tag}] cloning git repo..."
 	git clone "https://\$GIT_ACCESS_TOKEN@\$GIT_HOST/capsule-2633671.git" capsule-repo
-	git -C capsule-repo checkout 1c79356c17a54db6f8925610b82c02220c3a213f --quiet
+	git -C capsule-repo checkout ce5bd8c3e61f07701ade1b7234b6f74678714dcb --quiet
 	mv capsule-repo/code capsule/code
 	rm -rf capsule-repo
 
@@ -212,7 +209,7 @@ process capsule_spikesort_kilosort_4_ecephys_5 {
 	path 'capsule/data/' from capsule_preprocess_ecephys_3_to_capsule_spikesort_kilosort_4_ecephys_5_7
 
 	output:
-	path 'capsule/results/*' into capsule_spikesort_kilosort_4_ecephys_5_to_capsule_hybrid_evaluation_ecephys_6_11
+	path 'capsule/results/*' into capsule_spikesort_kilosort_4_ecephys_5_to_capsule_hybrid_evaluation_ecephys_6_10
 
 	script:
 	"""
@@ -230,7 +227,7 @@ process capsule_spikesort_kilosort_4_ecephys_5 {
 
 	echo "[${task.tag}] cloning git repo..."
 	git clone "https://\$GIT_ACCESS_TOKEN@\$GIT_HOST/capsule-2928576.git" capsule-repo
-	git -C capsule-repo checkout 1d4f0e8cb30377937dcb95fc4bb7a2db773a83b2 --quiet
+	git -C capsule-repo checkout fe0588b7cd15a85817422be8255a0ae72af13acf --quiet
 	mv capsule-repo/code capsule/code
 	rm -rf capsule-repo
 
@@ -254,11 +251,10 @@ process capsule_hybrid_evaluation_ecephys_6 {
 	publishDir "$RESULTS_PATH", saveAs: { filename -> new File(filename).getName() }
 
 	input:
-	path 'capsule/data/sc2/' from capsule_spikesort_spyking_circus_2_ecephys_7_to_capsule_hybrid_evaluation_ecephys_6_8.collect()
-	path 'capsule/data/ecephys_session' from ecephys_to_hybrid_evaluation_ecephys_9.collect()
-	path 'capsule/data/' from capsule_hybrid_generation_ecephys_2_to_capsule_hybrid_evaluation_ecephys_6_10.collect()
-	path 'capsule/data/ks4/' from capsule_spikesort_kilosort_4_ecephys_5_to_capsule_hybrid_evaluation_ecephys_6_11.collect()
-	path 'capsule/data/ks25/' from capsule_spikesort_kilosort_25_ecephys_4_to_capsule_hybrid_evaluation_ecephys_6_12.collect()
+	path 'capsule/data/ecephys_session' from ecephys_to_hybrid_evaluation_ecephys_8.collect()
+	path 'capsule/data/' from capsule_hybrid_generation_ecephys_2_to_capsule_hybrid_evaluation_ecephys_6_9.collect()
+	path 'capsule/data/ks4/' from capsule_spikesort_kilosort_4_ecephys_5_to_capsule_hybrid_evaluation_ecephys_6_10.collect()
+	path 'capsule/data/ks25/' from capsule_spikesort_kilosort_25_ecephys_4_to_capsule_hybrid_evaluation_ecephys_6_11.collect()
 
 	output:
 	path 'capsule/results/*'
@@ -287,49 +283,6 @@ process capsule_hybrid_evaluation_ecephys_6 {
 	cd capsule/code
 	chmod +x run
 	./run ${params.capsule_hybrid_evaluation_ecephys_6_args}
-
-	echo "[${task.tag}] completed!"
-	"""
-}
-
-// capsule - Spikesort SpykingCircus2 Ecephys
-process capsule_spikesort_spyking_circus_2_ecephys_7 {
-	tag 'capsule-1515622'
-	container "$REGISTRY_HOST/capsule/b68f9aec-7e8d-4862-865a-38081f5a6aeb:d7f67cba2e69701806eab7311333eb09"
-
-	cpus 16
-	memory '128 GB'
-
-	input:
-	path 'capsule/data/' from capsule_preprocess_ecephys_3_to_capsule_spikesort_spyking_circus_2_ecephys_7_13
-
-	output:
-	path 'capsule/results/*' into capsule_spikesort_spyking_circus_2_ecephys_7_to_capsule_hybrid_evaluation_ecephys_6_8
-
-	script:
-	"""
-	#!/usr/bin/env bash
-	set -e
-
-	export CO_CAPSULE_ID=b68f9aec-7e8d-4862-865a-38081f5a6aeb
-	export CO_CPUS=16
-	export CO_MEMORY=137438953472
-
-	mkdir -p capsule
-	mkdir -p capsule/data && ln -s \$PWD/capsule/data /data
-	mkdir -p capsule/results && ln -s \$PWD/capsule/results /results
-	mkdir -p capsule/scratch && ln -s \$PWD/capsule/scratch /scratch
-
-	echo "[${task.tag}] cloning git repo..."
-	git clone "https://\$GIT_ACCESS_TOKEN@\$GIT_HOST/capsule-1515622.git" capsule-repo
-	git -C capsule-repo checkout 1214437bf1c81ec79d97ca196e259448fbf5b9c9 --quiet
-	mv capsule-repo/code capsule/code
-	rm -rf capsule-repo
-
-	echo "[${task.tag}] running capsule..."
-	cd capsule/code
-	chmod +x run
-	./run ${params.capsule_spikesort_spyking_circus_2_ecephys_7_args}
 
 	echo "[${task.tag}] completed!"
 	"""
