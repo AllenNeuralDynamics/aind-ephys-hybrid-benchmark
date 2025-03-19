@@ -1,0 +1,24 @@
+FROM continuumio/miniconda3:23.9.0-0
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Copy requirements.txt into the container
+COPY requirements.txt .
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --upgrade pip && \
+    grep -E 'aind-data-schema|hdmf-zarr|pynwb|neuroconv|wavpack-numcodecs|seaborn' requirements.txt | xargs pip install
+
+# Extract the spikeinterface version and install with extras
+RUN pip install --upgrade pip && \
+    SPIKEINTERFACE_VERSION=$(grep '^spikeinterface==' requirements.txt | cut -d'=' -f3) && \
+    pip install "spikeinterface[full]==${SPIKEINTERFACE_VERSION}"
+
+# Install evaluation from source
+RUN git clone https://github.com/alejoe91/spikeinterface.git && \
+    cd spikeinterface && git checkout ecff4a99120c6558f08d74b5ed42d8ebc18e5a49 && \
+    pip install . && cd ..
