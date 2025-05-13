@@ -15,7 +15,3 @@ RUN pip install --upgrade pip && \
     SPIKEINTERFACE_VERSION=$(grep '^spikeinterface==' requirements.txt | cut -d'=' -f3) && \
     pip install "spikeinterface[full]==${SPIKEINTERFACE_VERSION}"
 
-# Install SC2 from source
-RUN git clone https://github.com/SpikeInterface/spikeinterface.git && \
-    cd spikeinterface && git checkout 0952e944ba1bdf6b9a79e359fe69a2290a95f9b6 && \
-    pip install . && cd ..

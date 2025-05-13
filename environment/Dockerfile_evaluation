@@ -17,8 +17,3 @@ RUN pip install --upgrade pip && \
 RUN pip install --upgrade pip && \
     SPIKEINTERFACE_VERSION=$(grep '^spikeinterface==' requirements.txt | cut -d'=' -f3) && \
     pip install "spikeinterface[full]==${SPIKEINTERFACE_VERSION}"
-
-# Install evaluation from source
-RUN git clone https://github.com/alejoe91/spikeinterface.git && \
-    cd spikeinterface && git checkout ecff4a99120c6558f08d74b5ed42d8ebc18e5a49 && \
-    pip install . && cd ..

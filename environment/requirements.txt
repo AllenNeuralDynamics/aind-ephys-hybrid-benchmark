@@ -1,4 +1,4 @@
-spikeinterface==0.102.1
+spikeinterface==0.102.3
 pyvips==2.2.1
 torch==2.6.0
 pynwb==2.8.2
