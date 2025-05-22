@@ -4,10 +4,9 @@
 nextflow.enable.dsl = 2 // Retaining DSL2 for this file
 
 // Include subworkflows from the updated sorters_workflows.nf
-include { lossless } from './spike_sorting_cases.nf'
-include { wavpack_3 } from './spike_sorting_cases.nf'
-include { wavpack_2_5 } from './spike_sorting_cases.nf'
-include { wavpack_2_25 } from './spike_sorting_cases.nf'
+include { spike_sorting_kilosort25 } from './spike_sorting_cases.nf'
+include { spike_sorting_kilosort4 } from './spike_sorting_cases.nf'
+include { spike_sorting_spykingcircus2 } from './spike_sorting_cases.nf'
 
 // Params from main_sorters_slurm.nf
 params.ecephys_path = DATA_PATH
@@ -17,6 +16,7 @@ println "RESULTS_PATH: ${RESULTS_PATH}"
 println "PARAMS: ${params}"
 
 params.capsule_versions = "${baseDir}/capsule_versions.env" // Assuming baseDir is appropriate here
+
 // Read versions from main_sorters_slurm.nf - this needs to be accessible by included workflows too.
 def versions = [:]
 if (file(params.capsule_versions).exists()) {
@@ -80,13 +80,14 @@ if (!job_dispatch_args.contains("--multi-session")) {
     println "job_dispatch_args: ${job_dispatch_args}"
 }
 
-if (!params.containsKey("sorting_cases")){
-    params.sorting_cases = "lossless+wv-3+wv-2.5+wv-2.25"
+if (!params.containsKey("sorters") || params.sorters == "") {
+    params.sorters = "ks4+sc2"
 }
+def spike_sorting_cases = params.sorters.split('\\+')
 
-println "Sorter to run: ${params.sorter}"
-def sorting_cases_list = params.sorting_cases.split('\\+')
-println "Spike sorting cases to run: ${sorting_cases_list}"
+println "Sorters to run: ${spike_sorting_cases}"
+
+
 
 process job_dispatch {
     tag 'job-dispatch'
@@ -258,49 +259,35 @@ workflow {
 
     def sorter_results_ch = Channel.empty()
 
-    if ('lossless' in sorting_cases_list) {
-        lossless_output_ch = lossless(
+    if ('ks25' in spike_sorting_cases || 'kilosort25' in spike_sorting_cases) {
+        ks25_output_ch = spike_sorting_kilosort25(
             max_duration_minutes,
             ecephys_ch.collect(),
             hybrid_generation_out.recordings.flatten(),
-            params.sorter,
             preprocessing_args,
             spikesorting_args
         )
-        sorter_results_ch = sorter_results_ch.mix(lossless_output_ch)
+        sorter_results_ch = sorter_results_ch.mix(ks25_output_ch)
     }
-    if ('wv-3' in sorting_cases_list) {
-        wv3_output_ch = wavpack_3(
+    if ('ks4' in spike_sorting_cases || 'kilosort4' in spike_sorting_cases) {
+        ks4_output_ch = spike_sorting_kilosort4(
             max_duration_minutes,
             ecephys_ch.collect(),
             hybrid_generation_out.recordings.flatten(),
-            params.sorter,
             preprocessing_args,
             spikesorting_args
         )
-        sorter_results_ch = sorter_results_ch.mix(wv3_output_ch)
+        sorter_results_ch = sorter_results_ch.mix(ks4_output_ch)
     }
-    if ('wv-2.5' in sorting_cases_list) {
-        wv25_output_ch = wavpack_2_5(
+    if ('sc2' in spike_sorting_cases || 'spykingcircus2' in spike_sorting_cases) {
+        sc2_output_ch = spike_sorting_spykingcircus2(
             max_duration_minutes,
             ecephys_ch.collect(),
             hybrid_generation_out.recordings.flatten(),
-            params.sorter,
             preprocessing_args,
             spikesorting_args
         )
-        sorter_results_ch = sorter_results_ch.mix(wv25_output_ch)
-    }
-    if ('wv-2.25' in sorting_cases_list) {
-        wv225_output_ch = wavpack_2_25(
-            max_duration_minutes,
-            ecephys_ch.collect(),
-            hybrid_generation_out.recordings.flatten(),
-            params.sorter,
-            preprocessing_args,
-            spikesorting_args
-        )
-        sorter_results_ch = sorter_results_ch.mix(wv225_output_ch)
+        sorter_results_ch = sorter_results_ch.mix(sc2_output_ch)
     }
 
     all_sorter_results = sorter_results_ch.collect() // Collects all sorter outputs into a single list emission
