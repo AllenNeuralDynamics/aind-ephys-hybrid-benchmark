@@ -1,5 +1,7 @@
 # this needs to run in an env with spikeinterface/pynwb/neuroconv installed
 
+NXF_VER=25.04.1
+
 # get all input arguments into a variable
 INPUT_ARGS="$@"
 echo "Input arguments: $INPUT_ARGS"
@@ -26,10 +28,9 @@ DATA_PATH="$SAMPLE_DATASET_PATH/nwb"
 RESULTS_PATH="$SAMPLE_DATASET_PATH/nwb/results"
 
 # run pipeline
-NXF_VER=22.10.8 DATA_PATH=$DATA_PATH RESULTS_PATH=$RESULTS_PATH nextflow \
+NXF_VER=$NXF_VER DATA_PATH=$DATA_PATH RESULTS_PATH=$RESULTS_PATH nextflow \
     -C $PIPELINE_PATH/pipeline/nextflow_local.config \
     -log $RESULTS_PATH/nextflow/nextflow.log \
-    run $PIPELINE_PATH/pipeline/main_sorters_local.nf \
+    run $PIPELINE_PATH/pipeline/main_sorters_dsl2.nf \
     --job_dispatch_args "--input nwb" --hybrid_generation_args "--num-cases 2 --skip-correct-motion" \
-    --preprocessing_args "--no-remove-out-channels --no-remove-bad-channels"
-    $INPUT_ARGS
+    --preprocessing_args "--no-remove-out-channels --no-remove-bad-channels" $INPUT_ARGS

@@ -110,7 +110,7 @@ process job_dispatch {
 
 process hybrid_generation {
 	tag 'hybrid_generation'
-	def container_name = "ghcr.io/allenneuraldynamics/aind-ephys-hybrid-generation-dev:${params.container_tag}"
+	def container_name = "ghcr.io/allenneuraldynamics/aind-ephys-pipeline-base:${params.container_tag}"
     container container_name
 
 	input:
@@ -265,7 +265,7 @@ process spikesort_kilosort4 {
 
 process spikesort_spykingcircus2 {
 	tag 'spikesort_spykingcircus2'
-	def container_name = "ghcr.io/allenneuraldynamics/aind-ephys-spikesort-spykingcircus2-dev:${params.container_tag}"
+	def container_name = "ghcr.io/allenneuraldynamics/aind-ephys-pipeline-base:${params.container_tag}"
     container container_name
 
 	input:
@@ -301,7 +301,7 @@ process spikesort_spykingcircus2 {
 
 process hybrid_evaluation {
 	tag 'hybrid_evaluation'
-	def container_name = "ghcr.io/allenneuraldynamics/aind-ephys-hybrid-evaluation-dev:${params.container_tag}"
+	def container_name = "ghcr.io/allenneuraldynamics/aind-ephys-pipeline-base:${params.container_tag}"
     container container_name
 
 	publishDir "$RESULTS_PATH", saveAs: { filename -> new File(filename).getName() }
