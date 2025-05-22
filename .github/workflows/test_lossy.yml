@@ -1,4 +1,4 @@
-name: Test Nextflow Sorters Pipeline
+name: Test Nextflow Lossy Pipeline
 
 on:
   pull_request:
@@ -44,6 +44,6 @@ jobs:
 
         - name: Run Nextflow pipeline
           run: |
-            DATA_PATH="$(pwd)/sample_dataset/nwb" RESULTS_PATH="$(pwd)/sample_dataset/nwb/results_sorters" \
-            nextflow  -C "$(pwd)/.github/workflows/nextflow_test.config" run pipeline/main_sorters.nf \
+            DATA_PATH="$(pwd)/sample_dataset/nwb" RESULTS_PATH="$(pwd)/sample_dataset/nwb/results_lossy" \
+            nextflow  -C "$(pwd)/.github/workflows/nextflow_test.config" run pipeline/main_lossy.nf \
             --sorter spykingcircus2 --sorting_cases "lossless+wv-2.5" --job_dispatch_args "--input nwb"
