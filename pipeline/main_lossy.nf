@@ -83,6 +83,9 @@ if (!job_dispatch_args.contains("--multi-session")) {
 if (!params.containsKey("sorting_cases")){
     params.sorting_cases = "lossless+wv-3+wv-2.5+wv-2.25"
 }
+else {
+    println "Using sorting cases from params"
+}
 
 println "Sorter to run: ${params.sorter}"
 def sorting_cases_list = params.sorting_cases.split('\\+')
