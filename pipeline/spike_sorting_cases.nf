@@ -341,7 +341,7 @@ workflow lossless {
         }
 
     emit:
-        lossless_results = tuple('lossless', sorter_results_ch[1])
+        lossless_results = sorter_results_ch.map { it -> tuple('lossless', it[1]) }
 }
 
 workflow wavpack_3 {
@@ -387,7 +387,7 @@ workflow wavpack_3 {
         }
 
     emit:
-        wv3_results = tuple('wv-3', sorter_results_ch[1])
+        wv3_results = sorter_results_ch.map { it -> tuple('wv-3', it[1]) }
 }
 
 workflow wavpack_2_5 {
@@ -433,7 +433,7 @@ workflow wavpack_2_5 {
         }
 
     emit:
-        wv25_results = tuple('wv-2.5', sorter_results_ch[1])
+        wv25_results = sorter_results_ch.map { it -> tuple('wv-2.5', it[1]) }
 
 }
 
@@ -480,5 +480,5 @@ workflow wavpack_2_25 {
         }
 
     emit:
-        wv225_results = tuple('wv-2.25', sorter_results_ch[1])
+        wv225_results = sorter_results_ch.map { it -> tuple('wv-2.25', it[1]) }
 }
