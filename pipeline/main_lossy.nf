@@ -87,6 +87,14 @@ else {
     println "Using sorting cases from params"
 }
 
+if (!params.containsKey("sorter")) {
+    params.sorter = "kilosort4"
+    println "No sorter specified, defaulting to kilosort4"
+}
+else {
+    println "Using sorter from params"
+}
+
 println "Sorter to run: ${params.sorter}"
 def sorting_cases_list = params.sorting_cases.split('\\+')
 println "Spike sorting cases to run: ${sorting_cases_list}"
