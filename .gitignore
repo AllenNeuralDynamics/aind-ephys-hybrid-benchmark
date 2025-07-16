@@ -1,1 +1,10 @@
 /data/
+/*data*/
+/work/
+/*work*/
+/results/
+/*results*/
+/pipeline/work/
+**/.nextflow*
+**/work
+/docs/build/
