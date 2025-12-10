@@ -8,3 +8,5 @@
 **/.nextflow*
 **/work
 /docs/build/
+*.log
+*.log.*

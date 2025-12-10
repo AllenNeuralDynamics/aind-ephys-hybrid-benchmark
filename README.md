@@ -46,6 +46,8 @@ Currently, the pipeline supports the following input data types:
 By default, the `--multi-session` option of the `job_dispatch` process is activated, so that
 multiple sessions can be processed in one run.
 
+Alternatively, the pipeline can be run on existing hybrid recordings. You can download datasets from the [AIND Benchmark Data page](https://allenneuraldynamics.github.io/data.html#aind-benchmark-dataephys-hybrid-evaluation) and point the `DATA_PATH`  to the folder containing the hybrid recordings. In this case, the `job_dispatch_hybrid` process is used to generate the list of hybrid recordings to be evaluated. To use this option, set the `--existing` parameter when invoking the pipeline.
+
 # Output
 
 The `results` folder includes per-session evaluations and plots and an `aggregated` folder with the performance across all sessions.
@@ -59,6 +61,11 @@ The `results` folder includes per-session evaluations and plots and an `aggregat
 In Nextflow, the The `-resume` argument enables the caching mechanism.
 
 The following global parameters can be passed to the pipeline:
+
+```bash
+--existing    Whether to run on existing hybrid recordings (default: False)
+--n_jobs      Number of parallel jobs to run (only for local deployment, default: -1)
+```
 
 For the `spike sorter comparison` pipeline:
 ```bash
@@ -174,8 +181,8 @@ Clone this repo (`git clone https://github.com/AllenNeuralDynamics/aind-ephys-hy
 To invoke the pipeline you can run the following command:
 
 ```bash
-NXF_VER=22.10.8 DATA_PATH=$PWD/../data RESULTS_PATH=$PWD/../results \
-    nextflow -C nextflow_local.config -log $RESULTS_PATH/nextflow/nextflow.log \
+DATA_PATH=$PWD/../data RESULTS_PATH=$PWD/../results \
+    nextflow -C nextflow_local.config \
     run main_sorters.nf (main_lossy.nf) \
     --n_jobs 8 -resume
 ```
@@ -193,8 +200,9 @@ As an example, here is how to run the pipeline on SpikeGLX datasets in debug mod
 on a 120-second snippet to benchmark Kilosort4 and Spyking Circus2:
 
 ```bash
-NXF_VER=22.10.8 DATA_PATH=path/to/data_spikeglx RESULTS_PATH=path/to/results_spikeglx \
-    nextflow -C nextflow_local.config run main_sorters.nf --sorters "kilosort4+spykingcircus2" \
+DATA_PATH=path/to/data_spikeglx RESULTS_PATH=path/to/results_spikeglx \
+    nextflow -C nextflow_local.config \
+    run main_sorters.nf --sorters "kilosort4+spykingcircus2" \
     --job_dispatch_args "--input spikeglx" --preprocessing_args "--debug --debug-duration 120"
     
 ```

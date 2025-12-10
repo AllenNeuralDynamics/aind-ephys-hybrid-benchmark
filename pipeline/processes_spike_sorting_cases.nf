@@ -15,13 +15,10 @@ if (file(params.capsule_versions).exists()) {
     }
 } else {
     println "Warning: Capsule versions file not found at ${params.capsule_versions}. Using empty versions map."
-    versions['JOB_DISPATCH'] = versions['JOB_DISPATCH'] ?: 'main'
-    versions['HYBRID_GENERATION'] = versions['HYBRID_GENERATION'] ?: 'main'
     versions['PREPROCESSING'] = versions['PREPROCESSING'] ?: 'main'
     versions['SPIKESORT_KS25'] = versions['SPIKESORT_KS25'] ?: 'main'
     versions['SPIKESORT_KS4'] = versions['SPIKESORT_KS4'] ?: 'main'
     versions['SPIKESORT_SC2'] = versions['SPIKESORT_SC2'] ?: 'main'
-    versions['HYBRID_EVALUATION'] = versions['HYBRID_EVALUATION'] ?: 'main'
 }
 params.versions = versions
 
