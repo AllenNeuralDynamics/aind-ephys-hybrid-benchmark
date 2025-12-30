@@ -3,22 +3,16 @@
 nextflow.enable.dsl = 2 // Assuming DSL2 is still desired for this file
 
 // Helper function for git cloning
-// TODO: fix mapping for local clones
-// add script to pre-download all repos before running pipeline
+// TODO: add option to point to local folder (and figure out mapping)
 def gitCloneFunction() {
 '''
 clone_repo() {
     local repo_url="$1"
-    local commit_hash_or_path="$2"
+    local commit_hash="$2"
 
-    if [ -d "$commit_hash_or_path" ]; then
-        echo "Using local repository from: ${commit_hash_or_path}..."
-        cp -r "$commit_hash_or_path" capsule-repo
-    else
-        echo "cloning git repo: ${repo_url} (commit: ${commit_hash_or_path})..."
-        git clone "${repo_url}" capsule-repo
-        git -C capsule-repo -c core.fileMode=false checkout "${commit_hash_or_path}" --quiet
-    fi
+    echo "cloning git repo: ${repo_url} (commit: ${commit_hash})..."
+    git clone "${repo_url}" capsule-repo
+    git -C capsule-repo -c core.fileMode=false checkout "${commit_hash}" --quiet
 
     mv capsule-repo/code capsule/code
     rm -rf capsule-repo
