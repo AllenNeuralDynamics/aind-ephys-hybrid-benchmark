@@ -174,7 +174,7 @@ workflow {
         ks25_output_ch = spike_sorting_kilosort25(
             max_duration_minutes,
             ecephys_ch.collect(),
-            preprocessing_out,
+            preprocessing_out.results,
             spikesorting_args
         )
         sorter_results_ch = sorter_results_ch.mix(ks25_output_ch)
@@ -183,7 +183,7 @@ workflow {
         ks4_output_ch = spike_sorting_kilosort4(
             max_duration_minutes,
             ecephys_ch.collect(),
-            preprocessing_out,
+            preprocessing_out.results,
             spikesorting_args
         )
         sorter_results_ch = sorter_results_ch.mix(ks4_output_ch)
@@ -192,7 +192,7 @@ workflow {
         sc2_output_ch = spike_sorting_spykingcircus2(
             max_duration_minutes,
             ecephys_ch.collect(),
-            preprocessing_out,
+            preprocessing_out.results,
             spikesorting_args
         )
         sorter_results_ch = sorter_results_ch.mix(sc2_output_ch)

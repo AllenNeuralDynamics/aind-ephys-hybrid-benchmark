@@ -248,14 +248,14 @@ workflow spike_sorting_kilosort25 {
     take:
         max_duration_minutes
         ecephys_input_ch
-        preprocess_ch
+        preprocess_results
         spikesorting_args
 
     main:
         // Pass versions to process if it's scoped locally, or ensure it's global
         spikesort_kilosort25_ch = spikesort_kilosort25(
             max_duration_minutes,
-            preprocess_ch.results,
+            preprocess_results,
             spikesorting_args
         )
 
@@ -268,13 +268,13 @@ workflow spike_sorting_kilosort4 {
     take:
         max_duration_minutes
         ecephys_input_ch     // Channel: ecephys session input
-        preprocess_ch
+        preprocess_results
         spikesorting_args
 
     main:
         spikesort_kilosort4_ch = spikesort_kilosort4(
             max_duration_minutes, 
-            preprocess_ch.results,
+            preprocess_results,
             spikesorting_args
         )
 
@@ -287,13 +287,13 @@ workflow spike_sorting_spykingcircus2 {
     take:
         max_duration_minutes
         ecephys_input_ch
-        preprocess_ch
+        preprocess_results
         spikesorting_args
 
     main:
         spikesort_spykingcircus2_ch = spikesort_spykingcircus2(
             max_duration_minutes,
-            preprocess_ch.results,
+            preprocess_results,
             spikesorting_args    
         )
 
