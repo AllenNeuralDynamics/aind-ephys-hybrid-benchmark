@@ -2,28 +2,57 @@
 
 nextflow.enable.dsl = 2 // Assuming DSL2 is still desired for this file
 
-params.capsule_versions = "${baseDir}/capsule_versions.env" // Assuming baseDir is appropriate here
+// Helper function for git cloning
+// TODO: fix mapping for local clones
+// add script to pre-download all repos before running pipeline
+def gitCloneFunction() {
+'''
+clone_repo() {
+    local repo_url="$1"
+    local commit_hash_or_path="$2"
 
-// Read versions from main_sorters_slurm.nf - this needs to be accessible by included workflows too.
-def versions = [:]
-if (file(params.capsule_versions).exists()) {
-    file(params.capsule_versions).eachLine { line ->
-        if (line.contains('=')) {
-            def (key, value) = line.tokenize('=')
-            versions[key.trim()] = value.trim()
-        }
-    }
-} else {
-    println "Warning: Capsule versions file not found at ${params.capsule_versions}. Using empty versions map."
-    versions['JOB_DISPATCH'] = versions['JOB_DISPATCH'] ?: 'main'
-    versions['JOB_DISPATCH_HYBRID'] = versions['JOB_DISPATCH_HYBRID'] ?: 'main'
-    versions['HYBRID_GENERATION'] = versions['HYBRID_GENERATION'] ?: 'main'
-    versions['HYBRID_EVALUATION'] = versions['HYBRID_EVALUATION'] ?: 'main'
+    if [ -d "$commit_hash_or_path" ]; then
+        echo "Using local repository from: ${commit_hash_or_path}..."
+        cp -r "$commit_hash_or_path" capsule-repo
+    else
+        echo "cloning git repo: ${repo_url} (commit: ${commit_hash_or_path})..."
+        git clone "${repo_url}" capsule-repo
+        git -C capsule-repo -c core.fileMode=false checkout "${commit_hash_or_path}" --quiet
+    fi
+
+    mv capsule-repo/code capsule/code
+    rm -rf capsule-repo
 }
-params.versions = versions
+'''
+}
+
+def parse_capsule_versions() {
+    // Check for custom versions file first, fall back to default
+    def versionsFile = file("${baseDir}/capsule_versions_custom.env")
+    if (!versionsFile.exists()) {
+        versionsFile = file("${baseDir}/capsule_versions.env")
+    }
+    capsule_versions = versionsFile.toString()
+    println "Using custom capsule versions file at: ${capsule_versions}"
+
+    // Read versions from main_sorters_slurm.nf - this needs to be accessible by included workflows too.
+    def versions = [:]
+    if (file(capsule_versions).exists()) {
+        file(capsule_versions).eachLine { line ->
+            if (line.contains('=')) {
+                def (key, value) = line.tokenize('=')
+                versions[key.trim()] = value.trim()
+            }
+        }
+    } else {
+        println "Warning: Capsule versions file not found at ${capsule_versions}. Using empty versions map."
+    }
+    versions
+}
+
+params.versions = parse_capsule_versions()
 
 params.container_tag = "si-${params.versions['SPIKEINTERFACE_VERSION']}"
-println "CONTAINER TAG: ${params.container_tag}"
 
 process job_dispatch {
     tag 'job-dispatch'
@@ -55,10 +84,8 @@ process job_dispatch {
     TASK_DIR=\$(pwd)
 
     echo "[${task.tag}] cloning git repo..."
-    git clone "https://github.com/AllenNeuralDynamics/aind-ephys-job-dispatch.git" capsule-repo
-    git -C capsule-repo -c core.fileMode=false checkout ${params.versions['JOB_DISPATCH']}  --quiet
-    mv capsule-repo/code capsule/code
-    rm -rf capsule-repo
+    ${gitCloneFunction()}
+    clone_repo "https://github.com/AllenNeuralDynamics/aind-ephys-job-dispatch.git" "${params.versions['JOB_DISPATCH']}"
 
     echo "[${task.tag}] running capsule..."
     cd capsule/code
@@ -111,10 +138,8 @@ process job_dispatch_hybrid {
     TASK_DIR=\$(pwd)
 
     echo "[${task.tag}] cloning git repo..."
-    git clone "https://github.com/AllenNeuralDynamics/aind-ephys-hybrid-job-dispatch.git" capsule-repo
-    git -C capsule-repo -c core.fileMode=false checkout ${params.versions['JOB_DISPATCH_HYBRID']}  --quiet
-    mv capsule-repo/code capsule/code
-    rm -rf capsule-repo
+    ${gitCloneFunction()}
+    clone_repo "https://github.com/AllenNeuralDynamics/aind-ephys-hybrid-job-dispatch.git" "${params.versions['JOB_DISPATCH_HYBRID']}"
 
     echo "[${task.tag}] running capsule..."
     cd capsule/code
@@ -157,10 +182,8 @@ process hybrid_generation {
     mkdir -p capsule/scratch
 
     echo "[${task.tag}] cloning git repo..."
-    git clone "https://github.com/AllenNeuralDynamics/aind-ephys-hybrid-generation.git" capsule-repo
-    git -C capsule-repo -c core.fileMode=false checkout ${params.versions['HYBRID_GENERATION']} --quiet
-    mv capsule-repo/code capsule/code
-    rm -rf capsule-repo
+    ${gitCloneFunction()}
+    clone_repo "https://github.com/AllenNeuralDynamics/aind-ephys-hybrid-generation.git" "${params.versions['HYBRID_GENERATION']}"
 
     echo "[${task.tag}] running capsule..."
     cd capsule/code
@@ -224,10 +247,8 @@ process hybrid_evaluation {
         ${stage_sorter_dirs_str}
 
         echo "[${task.tag}] cloning git repo..."
-        git clone "https://github.com/AllenNeuralDynamics/aind-ephys-hybrid-evaluation.git" capsule-repo
-        git -C capsule-repo -c core.fileMode=false checkout ${params.versions['HYBRID_EVALUATION']} --quiet
-        mv capsule-repo/code capsule/code
-        rm -rf capsule-repo
+        ${gitCloneFunction()}
+        clone_repo "https://github.com/AllenNeuralDynamics/aind-ephys-hybrid-evaluation.git" "${params.versions['HYBRID_EVALUATION']}"
 
         echo "[${task.tag}] running capsule..."
         cd capsule/code

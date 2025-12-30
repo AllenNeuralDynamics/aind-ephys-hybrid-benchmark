@@ -3,6 +3,7 @@
 nextflow.enable.dsl = 2 // Retaining DSL2 for this file
 
 // Include common processes
+include { parse_capsule_versions } from './processes_common.nf'
 include { job_dispatch } from './processes_common.nf'
 include { job_dispatch_hybrid } from './processes_common.nf'
 include { hybrid_generation } from './processes_common.nf'
@@ -21,26 +22,7 @@ println "DATA_PATH: ${DATA_PATH}"
 println "RESULTS_PATH: ${RESULTS_PATH}"
 println "PARAMS: ${params}"
 
-// Check for custom versions file first, fall back to default
-def versionsFile = file("${baseDir}/capsule_versions_custom.env")
-if (!versionsFile.exists()) {
-    versionsFile = file("${baseDir}/capsule_versions.env")
-}
-params.capsule_versions = versionsFile.toString()
-
-// Read versions from main_sorters_slurm.nf - this needs to be accessible by included workflows too.
-def versions = [:]
-if (file(params.capsule_versions).exists()) {
-    file(params.capsule_versions).eachLine { line ->
-        if (line.contains('=')) {
-            def (key, value) = line.tokenize('=')
-            versions[key.trim()] = value.trim()
-        }
-    }
-} else {
-    println "Warning: Capsule versions file not found at ${params.capsule_versions}. Using empty versions map."
-}
-params.versions = versions
+params.versions = parse_capsule_versions()
 
 params.container_tag = "si-${params.versions['SPIKEINTERFACE_VERSION']}"
 println "CONTAINER TAG: ${params.container_tag}"
