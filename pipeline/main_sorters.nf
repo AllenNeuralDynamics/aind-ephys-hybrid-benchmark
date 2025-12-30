@@ -3,15 +3,17 @@
 nextflow.enable.dsl = 2 // Retaining DSL2 for this file
 
 // Include common processes
+include { parse_capsule_versions } from './processes_common.nf'
 include { job_dispatch } from './processes_common.nf'
 include { job_dispatch_hybrid } from './processes_common.nf'
 include { hybrid_generation } from './processes_common.nf'
 include { hybrid_evaluation } from './processes_common.nf'
 
 // Include subworkflows from the updated sorters_workflows.nf
-include { spike_sorting_kilosort25 } from './processes_spike_sorting_cases.nf'
-include { spike_sorting_kilosort4 } from './processes_spike_sorting_cases.nf'
-include { spike_sorting_spykingcircus2 } from './processes_spike_sorting_cases.nf'
+include { preprocessing } from './processes_spike_sorting_cases.nf'
+include { spikesort_kilosort25 } from './processes_spike_sorting_cases.nf'
+include { spikesort_kilosort4 } from './processes_spike_sorting_cases.nf'
+include { spikesort_spykingcircus2 } from './processes_spike_sorting_cases.nf'
 
 // Params from main_sorters_slurm.nf
 params.ecephys_path = DATA_PATH
@@ -20,21 +22,7 @@ println "DATA_PATH: ${DATA_PATH}"
 println "RESULTS_PATH: ${RESULTS_PATH}"
 println "PARAMS: ${params}"
 
-params.capsule_versions = "${baseDir}/capsule_versions.env" // Assuming baseDir is appropriate here
-
-// Read versions from main_sorters_slurm.nf - this needs to be accessible by included workflows too.
-def versions = [:]
-if (file(params.capsule_versions).exists()) {
-    file(params.capsule_versions).eachLine { line ->
-        if (line.contains('=')) {
-            def (key, value) = line.tokenize('=')
-            versions[key.trim()] = value.trim()
-        }
-    }
-} else {
-    println "Warning: Capsule versions file not found at ${params.capsule_versions}. Using empty versions map."
-}
-params.versions = versions
+params.versions = parse_capsule_versions()
 
 params.container_tag = "si-${params.versions['SPIKEINTERFACE_VERSION']}"
 println "CONTAINER TAG: ${params.container_tag}"
@@ -153,35 +141,37 @@ workflow {
         )
     }
 
+    // Preprocessing is common for all sorters
+    preprocessing_out = preprocessing(
+        max_duration_minutes,
+        ecephys_ch.collect(),
+        hybrid_generation_out.recordings.flatten(),
+        preprocessing_args
+    )
+
     def sorter_results_ch = Channel.empty()
 
 
     if ('ks25' in spike_sorting_cases || 'kilosort25' in spike_sorting_cases) {
-        ks25_output_ch = spike_sorting_kilosort25(
+        ks25_output_ch = spikesort_kilosort25(
             max_duration_minutes,
-            ecephys_ch.collect(),
-            hybrid_generation_out.recordings.flatten(),
-            preprocessing_args,
+            preprocessing_out.results,
             spikesorting_args
         )
         sorter_results_ch = sorter_results_ch.mix(ks25_output_ch)
     }
     if ('ks4' in spike_sorting_cases || 'kilosort4' in spike_sorting_cases) {
-        ks4_output_ch = spike_sorting_kilosort4(
+        ks4_output_ch = spikesort_kilosort4(
             max_duration_minutes,
-            ecephys_ch.collect(),
-            hybrid_generation_out.recordings.flatten(),
-            preprocessing_args,
+            preprocessing_out.results,
             spikesorting_args
         )
         sorter_results_ch = sorter_results_ch.mix(ks4_output_ch)
     }
     if ('sc2' in spike_sorting_cases || 'spykingcircus2' in spike_sorting_cases) {
-        sc2_output_ch = spike_sorting_spykingcircus2(
+        sc2_output_ch = spikesort_spykingcircus2(
             max_duration_minutes,
-            ecephys_ch.collect(),
-            hybrid_generation_out.recordings.flatten(),
-            preprocessing_args,
+            preprocessing_out.results,
             spikesorting_args
         )
         sorter_results_ch = sorter_results_ch.mix(sc2_output_ch)

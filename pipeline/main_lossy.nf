@@ -23,20 +23,9 @@ println "DATA_PATH: ${DATA_PATH}"
 println "RESULTS_PATH: ${RESULTS_PATH}"
 println "PARAMS: ${params}"
 
-params.capsule_versions = "${baseDir}/capsule_versions.env" // Assuming baseDir is appropriate here
-// Read versions from main_sorters_slurm.nf - this needs to be accessible by included workflows too.
-def versions = [:]
-if (file(params.capsule_versions).exists()) {
-    file(params.capsule_versions).eachLine { line ->
-        if (line.contains('=')) {
-            def (key, value) = line.tokenize('=')
-            versions[key.trim()] = value.trim()
-        }
-    }
-} else {
-    println "Warning: Capsule versions file not found at ${params.capsule_versions}. Using empty versions map."
-}
-params.versions = versions
+include { parse_capsule_versions } from './processes_common.nf'
+
+params.versions = parse_capsule_versions()
 
 params.container_tag = "si-${params.versions['SPIKEINTERFACE_VERSION']}"
 println "CONTAINER TAG: ${params.container_tag}"
