@@ -246,23 +246,16 @@ process spikesort_spykingcircus2 {
 // Subworkflow for preprocess + Kilosort2.5
 workflow spike_sorting_kilosort25 {
     take:
-        max_duration_minutes // Max duration for the recordings
-        ecephys_input_ch     // Channel: ecephys session input
-        hybrid_recordings_ch
-        preprocessing_args
+        max_duration_minutes
+        ecephys_input_ch
+        preprocess_ch
         spikesorting_args
 
     main:
-        preprocess_ch = preprocessing(
-            max_duration_minutes,
-            ecephys_input_ch.collect(),  
-            hybrid_recordings_ch.flatten(),
-            preprocessing_args
-        )
         // Pass versions to process if it's scoped locally, or ensure it's global
         spikesort_kilosort25_ch = spikesort_kilosort25(
             max_duration_minutes,
-            preprocessing_out.results,
+            preprocess_ch.results,
             spikesorting_args
         )
 
@@ -273,19 +266,12 @@ workflow spike_sorting_kilosort25 {
 // Subworkflow for preprocess + Kilosort4
 workflow spike_sorting_kilosort4 {
     take:
-        max_duration_minutes // Max duration for the recordings
-        ecephys_input_ch     
-        hybrid_recordings_ch 
-        preprocessing_args
+        max_duration_minutes
+        ecephys_input_ch     // Channel: ecephys session input
+        preprocess_ch
         spikesorting_args
 
     main:
-        preprocess_ch = preprocessing(
-            max_duration_minutes,
-            ecephys_input_ch.collect(),
-            hybrid_recordings_ch.flatten(),
-            preprocessing_args
-        )
         spikesort_kilosort4_ch = spikesort_kilosort4(
             max_duration_minutes, 
             preprocess_ch.results,
@@ -299,19 +285,12 @@ workflow spike_sorting_kilosort4 {
 // Subworkflow for preprocess + SpykingCircus2
 workflow spike_sorting_spykingcircus2 {
     take:
-        max_duration_minutes // Max duration for the recordings
+        max_duration_minutes
         ecephys_input_ch
-        hybrid_recordings_ch 
-        preprocessing_args
+        preprocess_ch
         spikesorting_args
 
     main:
-        preprocess_ch = preprocessing(
-            max_duration_minutes,
-            ecephys_input_ch.collect(),
-            hybrid_recordings_ch.flatten(),
-            preprocessing_args
-        )
         spikesort_spykingcircus2_ch = spikesort_spykingcircus2(
             max_duration_minutes,
             preprocess_ch.results,

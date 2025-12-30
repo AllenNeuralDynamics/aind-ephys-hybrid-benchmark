@@ -20,7 +20,12 @@ println "DATA_PATH: ${DATA_PATH}"
 println "RESULTS_PATH: ${RESULTS_PATH}"
 println "PARAMS: ${params}"
 
-params.capsule_versions = "${baseDir}/capsule_versions.env" // Assuming baseDir is appropriate here
+// Check for custom versions file first, fall back to default
+def versionsFile = file("${baseDir}/capsule_versions_custom.env")
+if (!versionsFile.exists()) {
+    versionsFile = file("${baseDir}/capsule_versions.env")
+}
+params.capsule_versions = versionsFile.toString()
 
 // Read versions from main_sorters_slurm.nf - this needs to be accessible by included workflows too.
 def versions = [:]
@@ -153,6 +158,14 @@ workflow {
         )
     }
 
+    // Preprocessing is common for all sorters
+    preprocessing_out = preprocessing(
+        max_duration_minutes,
+        ecephys_ch.collect(),
+        hybrid_generation_out.recordings.flatten(),
+        preprocessing_args
+    )
+
     def sorter_results_ch = Channel.empty()
 
 
@@ -160,8 +173,7 @@ workflow {
         ks25_output_ch = spike_sorting_kilosort25(
             max_duration_minutes,
             ecephys_ch.collect(),
-            hybrid_generation_out.recordings.flatten(),
-            preprocessing_args,
+            preprocessing_out,
             spikesorting_args
         )
         sorter_results_ch = sorter_results_ch.mix(ks25_output_ch)
@@ -170,8 +182,7 @@ workflow {
         ks4_output_ch = spike_sorting_kilosort4(
             max_duration_minutes,
             ecephys_ch.collect(),
-            hybrid_generation_out.recordings.flatten(),
-            preprocessing_args,
+            preprocessing_out,
             spikesorting_args
         )
         sorter_results_ch = sorter_results_ch.mix(ks4_output_ch)
@@ -180,8 +191,7 @@ workflow {
         sc2_output_ch = spike_sorting_spykingcircus2(
             max_duration_minutes,
             ecephys_ch.collect(),
-            hybrid_generation_out.recordings.flatten(),
-            preprocessing_args,
+            preprocessing_out,
             spikesorting_args
         )
         sorter_results_ch = sorter_results_ch.mix(sc2_output_ch)

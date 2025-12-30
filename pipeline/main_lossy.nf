@@ -23,7 +23,12 @@ println "DATA_PATH: ${DATA_PATH}"
 println "RESULTS_PATH: ${RESULTS_PATH}"
 println "PARAMS: ${params}"
 
-params.capsule_versions = "${baseDir}/capsule_versions.env" // Assuming baseDir is appropriate here
+// Check for custom versions file first, fall back to default
+def versionsFile = file("${baseDir}/capsule_versions_custom.env")
+if (!versionsFile.exists()) {
+    versionsFile = file("${baseDir}/capsule_versions.env")
+}
+params.capsule_versions = versionsFile.toString()
 // Read versions from main_sorters_slurm.nf - this needs to be accessible by included workflows too.
 def versions = [:]
 if (file(params.capsule_versions).exists()) {
