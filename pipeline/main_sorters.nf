@@ -9,6 +9,7 @@ include { hybrid_generation } from './processes_common.nf'
 include { hybrid_evaluation } from './processes_common.nf'
 
 // Include subworkflows from the updated sorters_workflows.nf
+include { preprocessing } from './processes_spike_sorting_cases.nf'
 include { spike_sorting_kilosort25 } from './processes_spike_sorting_cases.nf'
 include { spike_sorting_kilosort4 } from './processes_spike_sorting_cases.nf'
 include { spike_sorting_spykingcircus2 } from './processes_spike_sorting_cases.nf'
