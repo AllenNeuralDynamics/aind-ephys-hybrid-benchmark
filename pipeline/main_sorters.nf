@@ -10,9 +10,9 @@ include { hybrid_evaluation } from './processes_common.nf'
 
 // Include subworkflows from the updated sorters_workflows.nf
 include { preprocessing } from './processes_spike_sorting_cases.nf'
-include { spike_sorting_kilosort25 } from './processes_spike_sorting_cases.nf'
-include { spike_sorting_kilosort4 } from './processes_spike_sorting_cases.nf'
-include { spike_sorting_spykingcircus2 } from './processes_spike_sorting_cases.nf'
+include { spikesort_kilosort25 } from './processes_spike_sorting_cases.nf'
+include { spikesort_kilosort4 } from './processes_spike_sorting_cases.nf'
+include { spikesort_spykingcircus2 } from './processes_spike_sorting_cases.nf'
 
 // Params from main_sorters_slurm.nf
 params.ecephys_path = DATA_PATH
@@ -171,27 +171,24 @@ workflow {
 
 
     if ('ks25' in spike_sorting_cases || 'kilosort25' in spike_sorting_cases) {
-        ks25_output_ch = spike_sorting_kilosort25(
+        ks25_output_ch = spikesort_kilosort25(
             max_duration_minutes,
-            ecephys_ch.collect(),
             preprocessing_out.results,
             spikesorting_args
         )
         sorter_results_ch = sorter_results_ch.mix(ks25_output_ch)
     }
     if ('ks4' in spike_sorting_cases || 'kilosort4' in spike_sorting_cases) {
-        ks4_output_ch = spike_sorting_kilosort4(
+        ks4_output_ch = spikesort_kilosort4(
             max_duration_minutes,
-            ecephys_ch.collect(),
             preprocessing_out.results,
             spikesorting_args
         )
         sorter_results_ch = sorter_results_ch.mix(ks4_output_ch)
     }
     if ('sc2' in spike_sorting_cases || 'spykingcircus2' in spike_sorting_cases) {
-        sc2_output_ch = spike_sorting_spykingcircus2(
+        sc2_output_ch = spikesort_spykingcircus2(
             max_duration_minutes,
-            ecephys_ch.collect(),
             preprocessing_out.results,
             spikesorting_args
         )

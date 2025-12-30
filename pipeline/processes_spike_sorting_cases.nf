@@ -243,64 +243,6 @@ process spikesort_spykingcircus2 {
 }
 
 
-// Subworkflow for preprocess + Kilosort2.5
-workflow spike_sorting_kilosort25 {
-    take:
-        max_duration_minutes
-        ecephys_input_ch
-        preprocess_results
-        spikesorting_args
-
-    main:
-        // Pass versions to process if it's scoped locally, or ensure it's global
-        spikesort_kilosort25_ch = spikesort_kilosort25(
-            max_duration_minutes,
-            preprocess_results,
-            spikesorting_args
-        )
-
-    emit:
-        kilosort25_results = spikesort_kilosort25_ch
-}
-
-// Subworkflow for preprocess + Kilosort4
-workflow spike_sorting_kilosort4 {
-    take:
-        max_duration_minutes
-        ecephys_input_ch     // Channel: ecephys session input
-        preprocess_results
-        spikesorting_args
-
-    main:
-        spikesort_kilosort4_ch = spikesort_kilosort4(
-            max_duration_minutes, 
-            preprocess_results,
-            spikesorting_args
-        )
-
-    emit:
-        kilosort4_results = spikesort_kilosort4_ch
-}
-
-// Subworkflow for preprocess + SpykingCircus2
-workflow spike_sorting_spykingcircus2 {
-    take:
-        max_duration_minutes
-        ecephys_input_ch
-        preprocess_results
-        spikesorting_args
-
-    main:
-        spikesort_spykingcircus2_ch = spikesort_spykingcircus2(
-            max_duration_minutes,
-            preprocess_results,
-            spikesorting_args    
-        )
-
-    emit:
-        spykingcircus2_results = spikesort_spykingcircus2_ch
-}
-
 workflow lossless {
     take:
         max_duration_minutes // Max duration for the recordings
