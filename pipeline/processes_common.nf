@@ -117,7 +117,7 @@ process job_dispatch_hybrid {
 
     if [[ ${params.executor} == "slurm" ]]; then
         # make sure N_JOBS matches allocated CPUs on SLURM
-        export CO_CPUS=${task.cpus}
+        export N_JOBS_EXT=${task.cpus}
     fi
 
     mkdir -p capsule
