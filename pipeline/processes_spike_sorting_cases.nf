@@ -2,28 +2,12 @@
 
 nextflow.enable.dsl = 2 // Assuming DSL2 is still desired for this file
 
+include { parse_capsule_versions } from './processes_common.nf'
+include { gitCloneFunction } from './processes_common.nf'
 
-params.capsule_versions = "${baseDir}/capsule_versions.env" // Assuming baseDir is appropriate here
-// Read versions from main_sorters_slurm.nf - this needs to be accessible by included workflows too.
-def versions = [:]
-if (file(params.capsule_versions).exists()) {
-    file(params.capsule_versions).eachLine { line ->
-        if (line.contains('=')) {
-            def (key, value) = line.tokenize('=')
-            versions[key.trim()] = value.trim()
-        }
-    }
-} else {
-    println "Warning: Capsule versions file not found at ${params.capsule_versions}. Using empty versions map."
-    versions['PREPROCESSING'] = versions['PREPROCESSING'] ?: 'main'
-    versions['SPIKESORT_KS25'] = versions['SPIKESORT_KS25'] ?: 'main'
-    versions['SPIKESORT_KS4'] = versions['SPIKESORT_KS4'] ?: 'main'
-    versions['SPIKESORT_SC2'] = versions['SPIKESORT_SC2'] ?: 'main'
-}
-params.versions = versions
+params.versions = parse_capsule_versions()
 
 params.container_tag = "si-${params.versions['SPIKEINTERFACE_VERSION']}"
-println "CONTAINER TAG: ${params.container_tag}"
 
 process preprocessing {
     tag 'preprocessing'
@@ -55,10 +39,8 @@ process preprocessing {
     mkdir -p capsule/scratch
 
     echo "[${task.tag}] cloning git repo..."
-    git clone "https://github.com/AllenNeuralDynamics/aind-ephys-preprocessing.git" capsule-repo
-    git -C capsule-repo -c core.fileMode=false checkout ${params.versions['PREPROCESSING']} --quiet
-    mv capsule-repo/code capsule/code
-    rm -rf capsule-repo
+    ${gitCloneFunction()}
+    clone_repo "https://github.com/AllenNeuralDynamics/aind-ephys-preprocessing.git" "${params.versions['PREPROCESSING']}"
 
     echo "[${task.tag}] running capsule..."
     cd capsule/code
@@ -99,10 +81,8 @@ process compress_wavpack {
 	mkdir -p capsule/scratch
 
 	echo "[${task.tag}] cloning git repo..."
-	git clone "https://github.com/AllenNeuralDynamics/aind-ephys-compress.git" capsule-repo
-	git -C capsule-repo -c core.fileMode=false checkout ${params.versions['COMPRESSION']} --quiet
-	mv capsule-repo/code capsule/code
-	rm -rf capsule-repo
+    ${gitCloneFunction()}
+    clone_repo "https://github.com/AllenNeuralDynamics/aind-ephys-compress.git" "${params.versions['COMPRESSION']}"
 
 	echo "[${task.tag}] running capsule..."
 	cd capsule/code
@@ -142,10 +122,8 @@ process spikesort_kilosort25 {
     mkdir -p capsule/scratch
 
     echo "[${task.tag}] cloning git repo..."
-    git clone "https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-kilosort25.git" capsule-repo
-    git -C capsule-repo -c core.fileMode=false checkout ${params.versions['SPIKESORT_KS25']} --quiet
-    mv capsule-repo/code capsule/code
-    rm -rf capsule-repo
+    ${gitCloneFunction()}
+    clone_repo "https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-kilosort25.git" "${params.versions['SPIKESORT_KS25']}"
 
     echo "[${task.tag}] running capsule..."
     cd capsule/code
@@ -185,10 +163,8 @@ process spikesort_kilosort4 {
     mkdir -p capsule/scratch
 
     echo "[${task.tag}] cloning git repo..."
-    git clone "https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-kilosort4.git" capsule-repo
-    git -C capsule-repo -c core.fileMode=false checkout ${params.versions['SPIKESORT_KS4']} --quiet
-    mv capsule-repo/code capsule/code
-    rm -rf capsule-repo
+    ${gitCloneFunction()}
+    clone_repo "https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-kilosort4.git" "${params.versions['SPIKESORT_KS4']}"
 
     echo "[${task.tag}] running capsule..."
     cd capsule/code
@@ -228,10 +204,8 @@ process spikesort_spykingcircus2 {
     mkdir -p capsule/scratch
 
     echo "[${task.tag}] cloning git repo..."
-    git clone "https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-spykingcircus2.git" capsule-repo
-    git -C capsule-repo -c core.fileMode=false checkout ${params.versions['SPIKESORT_SC2']} --quiet
-    mv capsule-repo/code capsule/code
-    rm -rf capsule-repo
+    ${gitCloneFunction()}
+    clone_repo "https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-spykingcircus2.git" "${params.versions['SPIKESORT_SC2']}"
 
     echo "[${task.tag}] running capsule..."
     cd capsule/code
@@ -242,85 +216,6 @@ process spikesort_spykingcircus2 {
     """
 }
 
-
-// Subworkflow for preprocess + Kilosort2.5
-workflow spike_sorting_kilosort25 {
-    take:
-        max_duration_minutes // Max duration for the recordings
-        ecephys_input_ch     // Channel: ecephys session input
-        hybrid_recordings_ch
-        preprocessing_args
-        spikesorting_args
-
-    main:
-        preprocess_ch = preprocessing(
-            max_duration_minutes,
-            ecephys_input_ch.collect(),  
-            hybrid_recordings_ch.flatten(),
-            preprocessing_args
-        )
-        // Pass versions to process if it's scoped locally, or ensure it's global
-        spikesort_kilosort25_ch = spikesort_kilosort25(
-            max_duration_minutes,
-            preprocessing_out.results,
-            spikesorting_args
-        )
-
-    emit:
-        kilosort25_results = spikesort_kilosort25_ch
-}
-
-// Subworkflow for preprocess + Kilosort4
-workflow spike_sorting_kilosort4 {
-    take:
-        max_duration_minutes // Max duration for the recordings
-        ecephys_input_ch     
-        hybrid_recordings_ch 
-        preprocessing_args
-        spikesorting_args
-
-    main:
-        preprocess_ch = preprocessing(
-            max_duration_minutes,
-            ecephys_input_ch.collect(),
-            hybrid_recordings_ch.flatten(),
-            preprocessing_args
-        )
-        spikesort_kilosort4_ch = spikesort_kilosort4(
-            max_duration_minutes, 
-            preprocess_ch.results,
-            spikesorting_args
-        )
-
-    emit:
-        kilosort4_results = spikesort_kilosort4_ch
-}
-
-// Subworkflow for preprocess + SpykingCircus2
-workflow spike_sorting_spykingcircus2 {
-    take:
-        max_duration_minutes // Max duration for the recordings
-        ecephys_input_ch
-        hybrid_recordings_ch 
-        preprocessing_args
-        spikesorting_args
-
-    main:
-        preprocess_ch = preprocessing(
-            max_duration_minutes,
-            ecephys_input_ch.collect(),
-            hybrid_recordings_ch.flatten(),
-            preprocessing_args
-        )
-        spikesort_spykingcircus2_ch = spikesort_spykingcircus2(
-            max_duration_minutes,
-            preprocess_ch.results,
-            spikesorting_args    
-        )
-
-    emit:
-        spykingcircus2_results = spikesort_spykingcircus2_ch
-}
 
 workflow lossless {
     take:

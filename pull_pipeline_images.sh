@@ -5,7 +5,7 @@
 #   pull_aind_images.sh [--cache CACHE_DIR] [--tag si-X.Y.Z] [--sorter SORTER]
 #
 # Defaults:
-#   --cache   : $NXF_APPTAINER_CACHEDIR or $NXF_SINGULARITY_CACHEDIR
+#   --cache   : $NXF_APPTAINER_CACHEDIR
 #   --tag     : resolved from pipeline/capsule_versions.env (SPIKEINTERFACE_VERSION)
 #               or defaults to si-0.103.0
 #   --sorter  : kilosort4   (options: kilosort25, kilosort4, spykingcircus2, all)
@@ -82,6 +82,8 @@ case "$SORTER" in
     IMAGES+=("ghcr.io/allenneuraldynamics/aind-ephys-spikesort-kilosort4");;
   spykingcircus2)
     IMAGES+=("ghcr.io/allenneuraldynamics/aind-ephys-spikesort-spykingcircus2");;
+  dev)
+    IMAGES+=("ghcr.io/allenneuraldynamics/aind-ephys-pipeline-si-sorters");;
   all)
     IMAGES+=(
       "ghcr.io/allenneuraldynamics/aind-ephys-spikesort-kilosort25"
@@ -99,11 +101,15 @@ esac
 
 
 for img in "${IMAGES[@]}"; do
-  echo "[pull] $img:$TAG"
+  IMG_NAME="$img:$TAG"
+  IMG_NAME="${IMG_NAME//\//-}"
+  IMG_NAME="${IMG_NAME//:/-}"
+
+  echo "[pull] $img:$TAG to $CACHE_DIR/$IMG_NAME.img"
   if command -v singularity >/dev/null 2>&1; then
-    singularity pull --name "$img-$TAG.img" --dir "$CACHE_DIR" "docker://$img:$TAG" || true
+    singularity pull --name "$IMG_NAME.img" --dir "$CACHE_DIR" "docker://$img:$TAG" || true
   elif command -v apptainer >/dev/null 2>&1; then
-    apptainer pull --name "$img-$TAG.img" --dir "$CACHE_DIR" "docker://$img:$TAG" || true
+    apptainer pull --name "$IMG_NAME.img" --dir "$CACHE_DIR" "docker://$img:$TAG" || true
   else
     echo "ERROR: neither singularity nor apptainer found in PATH" >&2
     exit 127

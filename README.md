@@ -1,4 +1,4 @@
-# AIND Ephys Hybrid Benhmark
+# AIND Ephys Hybrid Benchmark
 ## aind-ephys-hybrid-benchmark
 
 Hybrid benchmark pipeline with [SpikeInterface](https://github.com/SpikeInterface/spikeinterface).
