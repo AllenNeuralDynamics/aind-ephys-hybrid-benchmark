@@ -30,7 +30,7 @@ process preprocessing {
 
     if [[ ${params.executor} == "slurm" ]]; then
         # make sure N_JOBS matches allocated CPUs on SLURM
-        export CO_CPUS=${task.cpus}
+        export N_JOBS_EXT=${task.cpus}
     fi
 
     mkdir -p capsule
@@ -72,7 +72,7 @@ process compress_wavpack {
 
     if [[ ${params.executor} == "slurm" ]]; then
         # make sure N_JOBS matches allocated CPUs on SLURM
-        export CO_CPUS=${task.cpus}
+        export N_JOBS_EXT=${task.cpus}
     fi
 
 	mkdir -p capsule
@@ -113,7 +113,7 @@ process spikesort_kilosort25 {
 
     if [[ ${params.executor} == "slurm" ]]; then
         # make sure N_JOBS matches allocated CPUs on SLURM
-        export CO_CPUS=${task.cpus}
+        export N_JOBS_EXT=${task.cpus}
     fi
 
     mkdir -p capsule
@@ -154,7 +154,7 @@ process spikesort_kilosort4 {
 
     if [[ ${params.executor} == "slurm" ]]; then
         # make sure N_JOBS matches allocated CPUs on SLURM
-        export CO_CPUS=${task.cpus}
+        export N_JOBS_EXT=${task.cpus}
     fi
 
     mkdir -p capsule
@@ -195,7 +195,7 @@ process spikesort_spykingcircus2 {
 
     if [[ ${params.executor} == "slurm" ]]; then
         # make sure N_JOBS matches allocated CPUs on SLURM
-        export CO_CPUS=${task.cpus}
+        export N_JOBS_EXT=${task.cpus}
     fi
 
     mkdir -p capsule
@@ -215,6 +215,48 @@ process spikesort_spykingcircus2 {
     echo "[${task.tag}] completed!"
     """
 }
+
+process spikesort_lupin {
+    tag 'spikesort_lupin'
+    def container_name = "ghcr.io/allenneuraldynamics/aind-ephys-pipeline-base:${params.container_tag}"
+    container container_name
+
+    input:
+    val max_duration_minutes
+    path preprocessing_results, stageAs: 'capsule/data/*'
+    val spikesorting_args
+
+    output:
+    tuple val('lupin'), path('capsule/results')
+
+    script:
+    """
+    #!/usr/bin/env bash
+    set -e
+
+    if [[ ${params.executor} == "slurm" ]]; then
+        # make sure N_JOBS matches allocated CPUs on SLURM
+        export N_JOBS_EXT=${task.cpus}
+    fi
+
+    mkdir -p capsule
+    mkdir -p capsule/data
+    mkdir -p capsule/results
+    mkdir -p capsule/scratch
+
+    echo "[${task.tag}] cloning git repo..."
+    ${gitCloneFunction()}
+    clone_repo "https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-lupin.git" "${params.versions['SPIKESORT_LUPIN']}"
+
+    echo "[${task.tag}] running capsule..."
+    cd capsule/code
+    chmod +x run
+    ./run ${spikesorting_args}
+
+    echo "[${task.tag}] completed!"
+    """
+}
+
 
 
 workflow lossless {
@@ -343,6 +385,13 @@ workflow wavpack_2_5 {
             )
         } else if (sorter == 'spykingcircus2' || sorter == 'sc2') {
             sorter_results_ch = spikesort_spykingcircus2(
+                max_duration_minutes,
+                preprocess_ch.results,
+                spikesorting_args
+            )
+        }
+        else if (sorter == 'lupin' || sorter == 'lp') {
+            sorter_results_ch = spikesort_lupin(
                 max_duration_minutes,
                 preprocess_ch.results,
                 spikesorting_args
