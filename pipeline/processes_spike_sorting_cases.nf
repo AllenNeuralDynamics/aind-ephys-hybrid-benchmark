@@ -30,7 +30,7 @@ process preprocessing {
 
     if [[ ${params.executor} == "slurm" ]]; then
         # make sure N_JOBS matches allocated CPUs on SLURM
-        export CO_CPUS=${task.cpus}
+        export N_JOBS_EXT=${task.cpus}
     fi
 
     mkdir -p capsule
@@ -40,7 +40,7 @@ process preprocessing {
 
     echo "[${task.tag}] cloning git repo..."
     ${gitCloneFunction()}
-    clone_repo "https://github.com/AllenNeuralDynamics/aind-ephys-preprocessing.git" "${params.versions['PREPROCESSING']}"
+    clone_repo "${params.versions['PREPROCESSING_REPO']}" "${params.versions['PREPROCESSING_COMMIT']}"
 
     echo "[${task.tag}] running capsule..."
     cd capsule/code
@@ -72,7 +72,7 @@ process compress_wavpack {
 
     if [[ ${params.executor} == "slurm" ]]; then
         # make sure N_JOBS matches allocated CPUs on SLURM
-        export CO_CPUS=${task.cpus}
+        export N_JOBS_EXT=${task.cpus}
     fi
 
 	mkdir -p capsule
@@ -82,7 +82,7 @@ process compress_wavpack {
 
 	echo "[${task.tag}] cloning git repo..."
     ${gitCloneFunction()}
-    clone_repo "https://github.com/AllenNeuralDynamics/aind-ephys-compress.git" "${params.versions['COMPRESSION']}"
+    clone_repo "${params.versions['COMPRESSION_REPO']}" "${params.versions['COMPRESSION_COMMIT']}"
 
 	echo "[${task.tag}] running capsule..."
 	cd capsule/code
@@ -113,7 +113,7 @@ process spikesort_kilosort25 {
 
     if [[ ${params.executor} == "slurm" ]]; then
         # make sure N_JOBS matches allocated CPUs on SLURM
-        export CO_CPUS=${task.cpus}
+        export N_JOBS_EXT=${task.cpus}
     fi
 
     mkdir -p capsule
@@ -123,7 +123,7 @@ process spikesort_kilosort25 {
 
     echo "[${task.tag}] cloning git repo..."
     ${gitCloneFunction()}
-    clone_repo "https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-kilosort25.git" "${params.versions['SPIKESORT_KS25']}"
+    clone_repo "${params.versions['SPIKESORT_KS25_REPO']}" "${params.versions['SPIKESORT_KS25_COMMIT']}"
 
     echo "[${task.tag}] running capsule..."
     cd capsule/code
@@ -154,7 +154,7 @@ process spikesort_kilosort4 {
 
     if [[ ${params.executor} == "slurm" ]]; then
         # make sure N_JOBS matches allocated CPUs on SLURM
-        export CO_CPUS=${task.cpus}
+        export N_JOBS_EXT=${task.cpus}
     fi
 
     mkdir -p capsule
@@ -164,7 +164,7 @@ process spikesort_kilosort4 {
 
     echo "[${task.tag}] cloning git repo..."
     ${gitCloneFunction()}
-    clone_repo "https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-kilosort4.git" "${params.versions['SPIKESORT_KS4']}"
+    clone_repo "${params.versions['SPIKESORT_KS4_REPO']}" "${params.versions['SPIKESORT_KS4_COMMIT']}"
 
     echo "[${task.tag}] running capsule..."
     cd capsule/code
@@ -195,7 +195,7 @@ process spikesort_spykingcircus2 {
 
     if [[ ${params.executor} == "slurm" ]]; then
         # make sure N_JOBS matches allocated CPUs on SLURM
-        export CO_CPUS=${task.cpus}
+        export N_JOBS_EXT=${task.cpus}
     fi
 
     mkdir -p capsule
@@ -205,7 +205,7 @@ process spikesort_spykingcircus2 {
 
     echo "[${task.tag}] cloning git repo..."
     ${gitCloneFunction()}
-    clone_repo "https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-spykingcircus2.git" "${params.versions['SPIKESORT_SC2']}"
+    clone_repo "${params.versions['SPIKESORT_SC2_REPO']}" "${params.versions['SPIKESORT_SC2_COMMIT']}"
 
     echo "[${task.tag}] running capsule..."
     cd capsule/code
@@ -215,6 +215,48 @@ process spikesort_spykingcircus2 {
     echo "[${task.tag}] completed!"
     """
 }
+
+process spikesort_lupin {
+    tag 'spikesort_lupin'
+    def container_name = "ghcr.io/allenneuraldynamics/aind-ephys-pipeline-base:${params.container_tag}"
+    container container_name
+
+    input:
+    val max_duration_minutes
+    path preprocessing_results, stageAs: 'capsule/data/*'
+    val spikesorting_args
+
+    output:
+    tuple val('lupin'), path('capsule/results')
+
+    script:
+    """
+    #!/usr/bin/env bash
+    set -e
+
+    if [[ ${params.executor} == "slurm" ]]; then
+        # make sure N_JOBS matches allocated CPUs on SLURM
+        export N_JOBS_EXT=${task.cpus}
+    fi
+
+    mkdir -p capsule
+    mkdir -p capsule/data
+    mkdir -p capsule/results
+    mkdir -p capsule/scratch
+
+    echo "[${task.tag}] cloning git repo..."
+    ${gitCloneFunction()}
+    clone_repo "${params.versions['SPIKESORT_LUPIN_REPO']}" "${params.versions['SPIKESORT_LUPIN_COMMIT']}"
+
+    echo "[${task.tag}] running capsule..."
+    cd capsule/code
+    chmod +x run
+    ./run ${spikesorting_args}
+
+    echo "[${task.tag}] completed!"
+    """
+}
+
 
 
 workflow lossless {
@@ -343,6 +385,13 @@ workflow wavpack_2_5 {
             )
         } else if (sorter == 'spykingcircus2' || sorter == 'sc2') {
             sorter_results_ch = spikesort_spykingcircus2(
+                max_duration_minutes,
+                preprocess_ch.results,
+                spikesorting_args
+            )
+        }
+        else if (sorter == 'lupin' || sorter == 'lp') {
+            sorter_results_ch = spikesort_lupin(
                 max_duration_minutes,
                 preprocess_ch.results,
                 spikesorting_args

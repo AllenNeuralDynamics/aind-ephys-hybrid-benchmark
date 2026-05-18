@@ -79,7 +79,7 @@ process job_dispatch {
 
     echo "[${task.tag}] cloning git repo..."
     ${gitCloneFunction()}
-    clone_repo "https://github.com/AllenNeuralDynamics/aind-ephys-job-dispatch.git" "${params.versions['JOB_DISPATCH']}"
+    clone_repo "${params.versions['JOB_DISPATCH_REPO']}" "${params.versions['JOB_DISPATCH_COMMIT']}"
 
     echo "[${task.tag}] running capsule..."
     cd capsule/code
@@ -117,7 +117,7 @@ process job_dispatch_hybrid {
 
     if [[ ${params.executor} == "slurm" ]]; then
         # make sure N_JOBS matches allocated CPUs on SLURM
-        export CO_CPUS=${task.cpus}
+        export N_JOBS_EXT=${task.cpus}
     fi
 
     mkdir -p capsule
@@ -133,7 +133,7 @@ process job_dispatch_hybrid {
 
     echo "[${task.tag}] cloning git repo..."
     ${gitCloneFunction()}
-    clone_repo "https://github.com/AllenNeuralDynamics/aind-ephys-hybrid-job-dispatch.git" "${params.versions['JOB_DISPATCH_HYBRID']}"
+    clone_repo "${params.versions['JOB_DISPATCH_HYBRID_REPO']}" "${params.versions['JOB_DISPATCH_HYBRID_COMMIT']}"
 
     echo "[${task.tag}] running capsule..."
     cd capsule/code
@@ -177,7 +177,7 @@ process hybrid_generation {
 
     echo "[${task.tag}] cloning git repo..."
     ${gitCloneFunction()}
-    clone_repo "https://github.com/AllenNeuralDynamics/aind-ephys-hybrid-generation.git" "${params.versions['HYBRID_GENERATION']}"
+    clone_repo "${params.versions['HYBRID_GENERATION_REPO']}" "${params.versions['HYBRID_GENERATION_COMMIT']}"
 
     echo "[${task.tag}] running capsule..."
     cd capsule/code
@@ -242,7 +242,7 @@ process hybrid_evaluation {
 
         echo "[${task.tag}] cloning git repo..."
         ${gitCloneFunction()}
-        clone_repo "https://github.com/AllenNeuralDynamics/aind-ephys-hybrid-evaluation.git" "${params.versions['HYBRID_EVALUATION']}"
+        clone_repo "${params.versions['HYBRID_EVALUATION_REPO']}" "${params.versions['HYBRID_EVALUATION_COMMIT']}"
 
         echo "[${task.tag}] running capsule..."
         cd capsule/code
