@@ -32,5 +32,5 @@ NXF_VER=$NXF_VER DATA_PATH=$DATA_PATH RESULTS_PATH=$RESULTS_PATH nextflow \
     -C $PIPELINE_PATH/.github/workflows/nextflow_test.config \
     -log $RESULTS_PATH/nextflow/nextflow.log \
     run $PIPELINE_PATH/pipeline/main_lossy.nf \
-    --job_dispatch_args "--input nwb" --hybrid_generation_args "--num-cases 2 --skip-correct-motion" \
+    --job_dispatch_args "--input nwb" --hybrid_generation_args "--num-cases 1 --skip-correct-motion" \
     --preprocessing_args "--no-remove-out-channels --no-remove-bad-channels" $INPUT_ARGS

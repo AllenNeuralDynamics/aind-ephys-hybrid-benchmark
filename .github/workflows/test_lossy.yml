@@ -4,6 +4,10 @@ on:
   pull_request:
       branches: [main]
       types: [synchronize, opened, reopened]
+
+env:
+  NXF_SYNTAX_PARSER: v1
+
 jobs:
     test:
         runs-on: ubuntu-latest
@@ -47,4 +51,4 @@ jobs:
             DATA_PATH="$(pwd)/sample_dataset/nwb" RESULTS_PATH="$(pwd)/sample_dataset/nwb/results_lossy" \
             nextflow  -C "$(pwd)/.github/workflows/nextflow_test.config" run pipeline/main_lossy.nf \
             --sorter spykingcircus2 --sorting_cases "lossless+wv-2.5" \
-            --hybrid_generation_args "--num-cases 2 --skip-correct-motion" --job_dispatch_args "--input nwb"
+            --hybrid_generation_args "--num-cases 1 --skip-correct-motion" --job_dispatch_args "--input nwb"

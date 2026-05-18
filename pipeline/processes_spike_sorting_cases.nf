@@ -40,7 +40,7 @@ process preprocessing {
 
     echo "[${task.tag}] cloning git repo..."
     ${gitCloneFunction()}
-    clone_repo "https://github.com/AllenNeuralDynamics/aind-ephys-preprocessing.git" "${params.versions['PREPROCESSING']}"
+    clone_repo "${params.versions['PREPROCESSING_REPO']}" "${params.versions['PREPROCESSING_COMMIT']}"
 
     echo "[${task.tag}] running capsule..."
     cd capsule/code
@@ -82,7 +82,7 @@ process compress_wavpack {
 
 	echo "[${task.tag}] cloning git repo..."
     ${gitCloneFunction()}
-    clone_repo "https://github.com/AllenNeuralDynamics/aind-ephys-compress.git" "${params.versions['COMPRESSION']}"
+    clone_repo "${params.versions['COMPRESSION_REPO']}" "${params.versions['COMPRESSION_COMMIT']}"
 
 	echo "[${task.tag}] running capsule..."
 	cd capsule/code
@@ -123,7 +123,7 @@ process spikesort_kilosort25 {
 
     echo "[${task.tag}] cloning git repo..."
     ${gitCloneFunction()}
-    clone_repo "https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-kilosort25.git" "${params.versions['SPIKESORT_KS25']}"
+    clone_repo "${params.versions['SPIKESORT_KS25_REPO']}" "${params.versions['SPIKESORT_KS25_COMMIT']}"
 
     echo "[${task.tag}] running capsule..."
     cd capsule/code
@@ -164,7 +164,7 @@ process spikesort_kilosort4 {
 
     echo "[${task.tag}] cloning git repo..."
     ${gitCloneFunction()}
-    clone_repo "https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-kilosort4.git" "${params.versions['SPIKESORT_KS4']}"
+    clone_repo "${params.versions['SPIKESORT_KS4_REPO']}" "${params.versions['SPIKESORT_KS4_COMMIT']}"
 
     echo "[${task.tag}] running capsule..."
     cd capsule/code
@@ -205,7 +205,7 @@ process spikesort_spykingcircus2 {
 
     echo "[${task.tag}] cloning git repo..."
     ${gitCloneFunction()}
-    clone_repo "https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-spykingcircus2.git" "${params.versions['SPIKESORT_SC2']}"
+    clone_repo "${params.versions['SPIKESORT_SC2_REPO']}" "${params.versions['SPIKESORT_SC2_COMMIT']}"
 
     echo "[${task.tag}] running capsule..."
     cd capsule/code
@@ -246,7 +246,7 @@ process spikesort_lupin {
 
     echo "[${task.tag}] cloning git repo..."
     ${gitCloneFunction()}
-    clone_repo "https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-lupin.git" "${params.versions['SPIKESORT_LUPIN']}"
+    clone_repo "${params.versions['SPIKESORT_LUPIN_REPO']}" "${params.versions['SPIKESORT_LUPIN_COMMIT']}"
 
     echo "[${task.tag}] running capsule..."
     cd capsule/code
