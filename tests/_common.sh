@@ -24,8 +24,8 @@ TEST_ARGS="--job_dispatch.input=nwb --job_dispatch.debug=true --job_dispatch.deb
 --preprocessing.remove_out_channels=false --preprocessing.remove_bad_channels=false"
 
 create_nwb_sample() {
-    if [ ! -f "$SAMPLE_DATASET_PATH/nwb/session0.nwb" ]; then
-        echo "$SAMPLE_DATASET_PATH/nwb/session0.nwb not found: creating it"
+    if [ ! -f "$SAMPLE_DATASET_PATH/nwb/session1.nwb" ]; then
+        echo "$SAMPLE_DATASET_PATH/nwb/session1.nwb not found: creating it"
         python "$SAMPLE_DATASET_PATH/create_test_nwb.py"
     fi
 }
