@@ -17,7 +17,7 @@ from neuroconv.tools.spikeinterface import add_recording_to_nwbfile
 this_folder = Path(__file__).parent
 
 num_files = 1
-num_recordings = 3
+num_recordings = 2
 duration = 120
 
 
