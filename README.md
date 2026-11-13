@@ -3,152 +3,160 @@
 
 Hybrid benchmark pipeline with [SpikeInterface](https://github.com/SpikeInterface/spikeinterface).
 
-The pipeline is based on [Nextflow](https://www.nextflow.io/) and it includes the following common steps:
+The pipeline is based on [Nextflow](https://www.nextflow.io/) and follows the same architecture as the
+[aind-ephys-pipeline](https://github.com/AllenNeuralDynamics/aind-ephys-pipeline): a single `pipeline/main.nf`
+runs on every backend, all parameters live in one JSON file validated against a schema, and each step clones its
+repository at the commit pinned in `pipeline/process_versions.env`.
+
+It includes the following common steps:
 
 - [job-dispatch](https://github.com/AllenNeuralDynamics/aind-ephys-job-dispatch/): generates a list of JSON files to be processed in parallel. Parallelization is performed over multiple probes and multiple shanks (e.g., for NP2-4shank probes). The steps from `hybrid-generation` to `spike-sorting` are run in parallel.
-- [hybrid-generation](https://github.com/AllenNeuralDynamics/aind-ephys-hybrid-generationh/): generate hybrid recordings for each input JSON file
+- [hybrid-generation](https://github.com/AllenNeuralDynamics/aind-ephys-hybrid-generation/): generates hybrid recordings (injected ground-truth units) for each input JSON file
+- [hybrid-job-dispatch](https://github.com/AllenNeuralDynamics/aind-ephys-hybrid-job-dispatch/): replaces `job-dispatch` + `hybrid-generation` when starting from existing hybrid datasets
 - [preprocessing](https://github.com/AllenNeuralDynamics/aind-ephys-preprocessing/): phase_shift, highpass filter, denoising (bad channel removal + common median reference ("cmr") or highpass spatial filter - "destripe"), and motion estimation (optionally correction)
+- [hybrid-evaluation](https://github.com/AllenNeuralDynamics/aind-ephys-hybrid-evaluation/): collects and evaluates the results
 
-- [hybrid-evaluation](https://github.com/AllenNeuralDynamics/aind-ephys-hybrid-evaluation/): collect and evaluate results
+The steps between the generation and the evaluation are the *sorting cases*: each case is a chain of steps that
+turns every hybrid recording into a spike sorting, and the evaluation compares the cases.
 
-The steps between the generation and evaluation are are the *spike sorting cases*. The repo currently implements to sample applications, that can be easily extended.
+## Sorting cases
 
-### Application 1: spike sorters comparison
+A case is a chain of up to three slots, always in this order:
 
-The *spike sorting cases* include:
-- [preprocessing](https://github.com/AllenNeuralDynamics/aind-ephys-preprocessing/)
-- spike sorting: several spike sorters are tested:
-  - [kilosort2.5](https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-kilosort25/)
-  - [kilosort4](https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-kilosort4/)
-  - [spykingcircus2](https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-spykingcircus2/)
+| Slot | Step | Input | Output |
+|---|---|---|---|
+| `compress_wavpack` (optional) | [aind-ephys-compress](https://github.com/AllenNeuralDynamics/aind-ephys-compress/): WavPack compression, `bps` bits per sample (`null`: lossless) | job file (`job_<id>.json`/`.pkl`, plus the `gt_<id>` folder of generated recordings) | job file of the compressed recording |
+| `preprocessing` (required) | [aind-ephys-preprocessing](https://github.com/AllenNeuralDynamics/aind-ephys-preprocessing/) | job file | preprocessed recording (`preprocessed_<id>`, `preprocessedviz_<id>.json`, optional `binary_<id>.json` and `motion_<id>`) |
+| `spikesort_<sorter>` (exactly one) | [kilosort4](https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-kilosort4/), [kilosort25](https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-kilosort25/), [spykingcircus2](https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-spykingcircus2/), [lupin](https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-lupin/), [dartsort](https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-dartsort/) | preprocessed recording | sorting folder (`spikesorted_<id>`) |
 
-### Application 2: lossy compression
+So a whole case takes a job file and returns a sorting folder. Each step reads its section of `params.json`
+(`compression`, `preprocessing`, `spikesorting.<sorter>`) and accepts three optional keys:
 
-The *spike sorting cases* include:
-- [wavpack compression](https://github.com/AllenNeuralDynamics/aind-ephys-compress/): includes lossless and lossy compression using [WavPack](https://wavpack.com/) with multiple compression levels (bit per samples - BPS)
-- [preprocessing](https://github.com/AllenNeuralDynamics/aind-ephys-preprocessing/)
-- spike sorting: using one of the following spike sorters:
-  - [kilosort2.5](https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-kilosort25/)
-  - [kilosort4](https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-kilosort4/)
-  - [spykingcircus2](https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-spykingcircus2/)
+- `params`: overrides merged into that section, validated against the schema
+- `repo`: a repository to clone instead of the pinned one. A replacement must follow the same input/output
+  contract as its slot, e.g. a custom preprocessing must write the outputs the sorters read. Its `params` are not validated.
+- `commit`: the commit to check out (default: the pinned commit, or `HEAD` for a custom `repo`)
+
+```json
+"sorting_cases": {
+    "ks4_highpass": {
+        "preprocessing": {"params": {"filter_type": "highpass"}},
+        "spikesort_kilosort4": {}
+    },
+    "ks4_bandpass": {
+        "preprocessing": {"params": {"filter_type": "bandpass"}},
+        "spikesort_kilosort4": {}
+    },
+    "ks4_wv3": {
+        "compress_wavpack": {"params": {"bps": 3}},
+        "preprocessing": {},
+        "spikesort_kilosort4": {}
+    }
+}
+```
+
+The case name is its folder and label in the evaluation. Cases with the same compression and preprocessing
+(params, repo, commit) share those tasks: comparing sorters preprocesses each recording only once.
+`--sorting_cases` takes the JSON inline or a path to a JSON file. Examples in [examples/sorting_cases](examples/sorting_cases):
+
+| File | Use case |
+|---|---|
+| [sorters.json](examples/sorting_cases/sorters.json) | Compare sorters (and a sorter with different params) |
+| [lossy.json](examples/sorting_cases/lossy.json) | Compare WavPack compression levels with one sorter |
+| [preprocessing_filters.json](examples/sorting_cases/preprocessing_filters.json) | Compare highpass and bandpass filtering |
+| [custom_step.json](examples/sorting_cases/custom_step.json) | Compare the standard preprocessing with a custom repository |
+
+A new kind of step (e.g. a separate denoiser) needs its own process and slot in `pipeline/main.nf`.
+
+### Presets: `benchmark`
+
+When `sorting_cases` is empty, `benchmark` builds the cases:
+
+- `sorters`: one case per sorter in `sorters`, named after the sorter.
+- `lossy`: one case per entry of `compression_cases`, each run with `sorter`: `lossless` (no compression step)
+  or `wv-<bps>` (WavPack with that BPS).
 
 
 # Input
 
-Currently, the pipeline supports the following input data types:
+Currently, the pipeline supports the following input data types (`job_dispatch.input`):
 
-- `spikeglx`: the input folder should contain SpikeGLX folders. It is recommended to add a `subject.json` and a `data_description.json` following the [aind-data-schema](https://aind-data-schema.readthedocs.io/en/latest/) specification, since these metadata are propagated to the NWB files.
-- `openephys`: the input folder should contain Open Ephys folders. It is recommended to add a `subject.json` and a `data_description.json` following the [aind-data-schema](https://aind-data-schema.readthedocs.io/en/latest/) specification, since these metadata are propagated to the NWB files.
-- `nwb`: the input folder should contain a NWB files (both HDF5 and Zarr backend are supported).
-- `spikeinterface`: 
-- `aind`: data ingestion used at AIND. The input folder must AIND ecephys sessions with an `ecephys` subfolder which in turn includes an `ecephys_clipped` (clipped Open Ephys folder) and an `ecephys_compressed` (compressed traces with Zarr). In addition, JSON file following the [aind-data-schema](https://aind-data-schema.readthedocs.io/en/latest/) are parsed to create processing and NWB metadata.
+- `spikeglx`: the input folder should contain SpikeGLX folders. It is recommended to add a `subject.json` and a `data_description.json` following the [aind-data-schema](https://aind-data-schema.readthedocs.io/en/latest/) specification.
+- `openephys`: the input folder should contain Open Ephys folders. It is recommended to add a `subject.json` and a `data_description.json` following the [aind-data-schema](https://aind-data-schema.readthedocs.io/en/latest/) specification.
+- `nwb`: the input folder should contain NWB files (both HDF5 and Zarr backend are supported).
+- `spikeinterface`: the input is loaded with a SpikeInterface reader, configured with `job_dispatch.spikeinterface_info`.
+- `aind`: data ingestion used at AIND. The input folder must contain AIND ecephys sessions with an `ecephys` subfolder which in turn includes an `ecephys_clipped` (clipped Open Ephys folder) and an `ecephys_compressed` (compressed traces with Zarr).
 
-By default, the `--multi-session` option of the `job_dispatch` process is activated, so that
-multiple sessions can be processed in one run.
+By default, `job_dispatch.multi_session` is `true`, so that multiple sessions can be processed in one run.
 
-Alternatively, the pipeline can be run on existing hybrid recordings. You can download datasets from the [AIND Benchmark Data page](https://allenneuraldynamics.github.io/data.html#aind-benchmark-dataephys-hybrid-evaluation) and point the `DATA_PATH`  to the folder containing the hybrid recordings. In this case, the `job_dispatch_hybrid` process is used to generate the list of hybrid recordings to be evaluated. To use this option, set the `--existing` parameter when invoking the pipeline.
+## Existing hybrid datasets
+
+Alternatively, the pipeline can be run on existing hybrid recordings (`existing: true`, or `--existing`). You can download datasets from the [AIND Benchmark Data page](https://allenneuraldynamics.github.io/data.html#aind-benchmark-dataephys-hybrid-evaluation) and point the input to the folder containing them, organized as `<session>/<case>/{recording,sorting}.zarr`.
+In this case, the `hybrid-job-dispatch` step lists the hybrid recordings to be evaluated.
+
+If the input is an `s3://` URL (e.g. `s3://aind-benchmark-data/ephys-hybrid-evaluation/sorters/np1/`), the data is not staged:
+the URL is passed to `job_dispatch.s3_path` and every step reads the recordings from S3. `job_dispatch.max_recordings` and `job_dispatch.seed`
+randomly sub-sample the available recordings.
 
 # Output
 
-The `results` folder includes per-session evaluations and plots and an `aggregated` folder with the performance across all sessions.
-
+The `results` folder includes per-session evaluations and plots, an `aggregated` folder with the performance across all sessions,
+and a `provenance.json` with the pipeline version, the repository and commit of every step and the effective parameters.
 
 
 # Parameters
 
-## Global parameters
+All parameters are in a single JSON file, by default [pipeline/default_params.json](pipeline/default_params.json).
+It is validated against [pipeline/default_params_schema.json](pipeline/default_params_schema.json) before anything runs.
+The merged parameters are written to `<workDir>/full_params.json` and staged as `params.json` into the steps before and
+after the sorting cases. Each case's steps get `<workDir>/params/{variant,case}_*.json`, with the case's overrides merged in.
+Each step reads its own section.
 
-In Nextflow, the The `-resume` argument enables the caching mechanism.
+| Key | Default | Description |
+|-----|---------|-------------|
+| `sorting_cases` | `{}` | Explicit [sorting cases](#sorting-cases). When set, the four keys below are ignored |
+| `benchmark` | `sorters` | Preset: `sorters` (compare `sorters`) or `lossy` (compare `compression_cases` with `sorter`) |
+| `sorters` | `["kilosort4", "spykingcircus2"]` | Sorters to compare (`benchmark: sorters`) |
+| `sorter` | `kilosort4` | Sorter used after compression (`benchmark: lossy`) |
+| `compression_cases` | `["lossless", 3, 2.5, 2.25]` | `lossless` or WavPack BPS values (`benchmark: lossy`) |
+| `existing` | `false` | Start from existing hybrid datasets instead of generating them |
+| `job_dispatch` | | Job dispatch (input type, debug mode, multi-session, ...) and, for existing datasets, `max_recordings`, `s3_path`, `seed` |
+| `hybrid_generation` | | `min_amp`, `max_amp`, `min_depth_percentile`, `max_depth_percentile`, `num_units`, `num_cases`, `correct_motion` |
+| `compression` | | `bps` (`null`: lossless) and `highpass`, for cases with a `compress_wavpack` step |
+| `preprocessing` | | Same as in the aind-ephys-pipeline |
+| `spikesorting.<sorter>` | | Same as in the aind-ephys-pipeline |
+| `hybrid_evaluation` | | `debug_cases`: only evaluate this many hybrid cases |
+| `logging` | | Logging configuration (`logging` or `log-schema`) |
 
-The following global parameters can be passed to the pipeline:
-
-```bash
---existing    Whether to run on existing hybrid recordings (default: False)
---n_jobs      Number of parallel jobs to run (only for local deployment, default: -1)
-```
-
-For the `spike sorter comparison` pipeline:
-```bash
---sorters     Combination of sorters to run, separated by a + (e.g., "kilosort4+spykingcircus2")
-```
-
-For the `lossy compression` pipeline:
-```bash
---sorter      Which sorter to run after compression (e.g. "kilosort4")
-```
-
-## Process-specific parameters
-
-Some steps of the pipeline accept additional parameters, that can be passed as follows:
-
-```bash
---{step_name}_args "{args}"
-```
-
-The steps that accept additional arguments are:
-
-### `job_dispatch_args`:
+The schema describes every key. Parameters can be changed in three ways:
 
 ```bash
-    --concatenate             # Whether to concatenate recordings (segments) or not. Default: False
-    --no-split-groups         # Whether to process different groups separately. Default: split groups
-    --debug                   # Whether to run in DEBUG mode. Default: False
-    --debug-duration DURATION # Duration of clipped recording in debug mode. Only used if debug is enabled. Default: 30 seconds
-    --skip-timestamps-check   # Skip timestamps check. Default: False
-    --input {aind,spikeglx,openephys,nwb,spikeinterface}
-                              # Which 'loader' to use (aind | spikeglx | openephys | nwb | spikeinterface)
-    --spikeinterface-info SPIKEINTERFACE_INFO
-                              # A JSON path or string to specify how to parse the recording in spikeinterface, including: 
-                                - 1. reader_type (required): string with the reader type (e.g. 'plexon', 'neuralynx', 'intan' etc.).
-                                - 2. reader_kwargs (optional): dictionary with the reader kwargs (e.g. {'folder': '/path/to/folder'}).
-                                - 3. keep_stream_substrings (optional): string or list of strings with the stream names to load (e.g. 'AP' or ['AP', 'LFP']).
-                                - 4. skip_stream_substrings (optional): string (or list of strings) with substrings used to skip streams (e.g. 'NIDQ' or ['USB', 'EVENTS']).
-                                - 5. probe_paths (optional): string or dict the probe paths to a ProbeInterface JSON file (e.g. '/path/to/probe.json'). If a dict is provided, the key is the stream name and the value is the probe path. If reader_kwargs is not provided, the reader will be created with default parameters. The probe_path is required if the reader doesn't load the probe automatically.
+# 1. a custom params file
+--params_file /path/to/my_params.json
+
+# 2. CLI flags following the JSON layout (top-level keys are plain flags)
+--benchmark lossy --sorter spykingcircus2 --compression_cases lossless,3
+--sorters kilosort4,spykingcircus2 --existing
+--sorting_cases examples/sorting_cases/preprocessing_filters.json
+--hybrid_generation.num_cases=2 --preprocessing.motion_correction.compute=false
+
+# 3. the same flags packed in one string (used on Code Ocean, where only App Panel params are forwarded)
+--extra_params "--benchmark=lossy --hybrid_generation.num_cases=2"
 ```
 
-### `hybrid_generation_args`
+Other global parameters:
 
 ```bash
-  --min-amp MIN_AMP     Minimum amplitude to scale injected templates
-  --max-amp MAX_AMP     Maximum amplitude to scale injected templates
-  --min-depth-percentile MIN_DEPTH_PERCENTILE
-                        Percentile of depths used as minimum depth
-  --max-depth-percentile MAX_DEPTH_PERCENTILE
-                        Percentile of depths used as maximum depth
-  --num-units NUM_UNITS
-                        Number of hybrid units for each case
-  --num-cases NUM_CASES
-                        Number of cases for each recording
-  --skip-correct-motion
-                        Whether to skip motion correction.
-
+--n_jobs              Number of parallel jobs (local deployment only, default: all CPUs)
+--container_tag       Tag of the ghcr.io/allenneuraldynamics images (default: pipeline/pipeline_version.txt)
+--extra_installs      Comma-separated pip packages installed before running each step
+--<step>_repo / --<step>_version
+                      Override the repository / commit of a step (e.g. --hybrid_generation_version <commit>)
 ```
 
-### `preprocessing_args`:
+A `pipeline/process_versions_custom.env`, if present, replaces `pipeline/process_versions.env`.
 
-```bash
-  --denoising {cmr,destripe}
-                        Which denoising strategy to use. Can be 'cmr' or 'destripe'
-  --filter-type {highpass,bandpass}
-                        Which filter to use. Can be 'highpass' or 'bandpass'
-  --no-remove-out-channels
-                        Whether to remove out channels
-  --no-remove-bad-channels
-                        Whether to remove bad channels
-  --max-bad-channel-fraction MAX_BAD_CHANNEL_FRACTION
-                        Maximum fraction of bad channels to remove. If more than this fraction, processing is skipped
-  --motion {skip,compute,apply}
-                        How to deal with motion correction. Can be 'skip', 'compute', or 'apply'
-  --motion-preset {dredge,dredge_fast,nonrigid_accurate,nonrigid_fast_and_accurate,rigid_fast,kilosort_like}
-                        What motion preset to use. Supported presets are:
-                        dredge, dredge_fast, nonrigid_accurate, nonrigid_fast_and_accurate, rigid_fast, kilosort_like.
-  --t-start T_START     Start time of the recording in seconds (assumes recording starts at 0). 
-                        This parameter is ignored in case of multi-segment or multi-block recordings.
-                        Default is None (start of recording)
-  --t-stop T_STOP       Stop time of the recording in seconds (assumes recording starts at 0). 
-                        This parameter is ignored in case of multi-segment or multi-block recordings.
-                        Default is None (end of recording)
-```
+In Nextflow, the `-resume` argument enables the caching mechanism.
 
 
 # Deployments
@@ -156,9 +164,9 @@ The steps that accept additional arguments are:
 ## Local
 
 > [!WARNING]
-> While the pipeline can be deployed locally on a workstation or a server, it is recommended to 
+> While the pipeline can be deployed locally on a workstation or a server, it is recommended to
 > deploy it on a SLURM cluster or on a batch processing system (e.g., AWS batch).
-> When deploying locally, the most recource-intensive processes (preprocessing, spike sorting, postprocessing) 
+> When deploying locally, the most resource-intensive processes (hybrid generation, compression, preprocessing, spike sorting)
 > are not parallelized to avoid overloading the system.
 > This is achieved by setting the `maxForks 1` directive in such processes.
 
@@ -166,7 +174,7 @@ The steps that accept additional arguments are:
 
 To deploy locally, you need to install:
 
-- `nextflow`
+- `nextflow` (>= 25.10)
 - `docker`
 
 Please checkout the [Nextflow](https://www.nextflow.io/docs/latest/install.html) and [Docker](https://docs.docker.com/engine/install/) installation instructions.
@@ -174,56 +182,58 @@ Please checkout the [Nextflow](https://www.nextflow.io/docs/latest/install.html)
 
 ### Run
 
-Clone this repo (`git clone https://github.com/AllenNeuralDynamics/aind-ephys-hybrid-benchmark.git`) and go to the 
-`pipeline` folder. You will find a `main_local.nf`. This nextflow script is accompanied by the 
-`nextflow_local.config` and can run on local workstations/machines.
+Clone this repo (`git clone https://github.com/AllenNeuralDynamics/aind-ephys-hybrid-benchmark.git`).
+The `pipeline/main.nf` script is accompanied by the `pipeline/nextflow_local.config` for local workstations/machines.
 
-To invoke the pipeline you can run the following command:
+To invoke the pipeline you can run the following command (from a folder outside the repository, since Nextflow writes its
+work and log files in the current folder):
 
 ```bash
-DATA_PATH=$PWD/../data RESULTS_PATH=$PWD/../results \
-    nextflow -C nextflow_local.config \
-    run main_sorters.nf (main_lossy.nf) \
+NXF_SYNTAX_PARSER=v1 DATA_PATH=/path/to/data RESULTS_PATH=/path/to/results \
+    nextflow -C /path/to/aind-ephys-hybrid-benchmark/pipeline/nextflow_local.config \
+    run /path/to/aind-ephys-hybrid-benchmark/pipeline/main.nf \
     --n_jobs 8 -resume
 ```
 
-The `DATA_PATH` specifies the folder where the input files are located. 
-The `RESULT_PATH` points to the output folder, where the data will be saved.
-The `--n_jobs` argument specifies the number of parallel jobs to run.
+The `DATA_PATH` specifies the folder where the input files are located (it can also be passed as `--ecephys_url`).
+The `RESULTS_PATH` points to the output folder, where the data will be saved.
+`NXF_SYNTAX_PARSER=v1` is needed with Nextflow >= 26.04, whose default strict parser rejects `main.nf`.
 
 Additional parameters can be passed as described in the [Parameters](#parameters) section.
 
 
 ### Example run command
 
-As an example, here is how to run the pipeline on SpikeGLX datasets in debug mode 
+As an example, here is how to run the pipeline on SpikeGLX datasets in debug mode
 on a 120-second snippet to benchmark Kilosort4 and Spyking Circus2:
 
 ```bash
-DATA_PATH=path/to/data_spikeglx RESULTS_PATH=path/to/results_spikeglx \
-    nextflow -C nextflow_local.config \
-    run main_sorters.nf --sorters "kilosort4+spykingcircus2" \
-    --job_dispatch_args "--input spikeglx" --preprocessing_args "--debug --debug-duration 120"
-    
+NXF_SYNTAX_PARSER=v1 DATA_PATH=path/to/data_spikeglx RESULTS_PATH=path/to/results_spikeglx \
+    nextflow -C /path/to/aind-ephys-hybrid-benchmark/pipeline/nextflow_local.config \
+    run /path/to/aind-ephys-hybrid-benchmark/pipeline/main.nf \
+    --sorters kilosort4,spykingcircus2 \
+    --job_dispatch.input=spikeglx --job_dispatch.debug=true --job_dispatch.debug_duration=120
 ```
+
+The `tests/` folder has ready-to-run examples for each benchmark on a small synthetic NWB dataset
+(`tests/test_pipeline_sorters.sh`, `tests/test_pipeline_lossy.sh`, `tests/test_pipeline_existing.sh`).
 
 
 ## SLURM
 
-To deploy on a SLURM cluster, you need to have access to a SLURM cluster and have the 
-[Nextflow](https://www.nextflow.io/docs/latest/install.html) and Singularity/Apptainer installed. 
-To use Figurl cloud visualizations, follow the same steps descrived in the 
-[Local deployment - Requirements](#requirements) section and set the KACHERY environment variables.
+To deploy on a SLURM cluster, you need to have access to a SLURM cluster and have
+[Nextflow](https://www.nextflow.io/docs/latest/install.html) and Singularity/Apptainer installed.
 
-Then, you can submit the pipeline to the cluster similarly to the Local deplyment, 
+Then, you can submit the pipeline to the cluster similarly to the Local deployment,
 but wrapping the command into a script that can be launched with `sbatch`.
 
 To avoid downloading the container images in the current location (usually the home folder),
-you can set the `NXF_SINGULARITY_CACHEDIR` environment variable to a different location.
+you can set the `NXF_SINGULARITY_CACHEDIR` (or `NXF_APPTAINER_CACHEDIR`) environment variable to a different location.
 
-You can use the `slurm_submit.sh` script as a template to submit the pipeline to your cluster.
-It is recommended to also make a copy of the `pipeline/nextflow_slurm.config` file and modify the `queue` parameter to match the partition you want to use on your cluster. In this example, we assume the copy is called 
-`pipeline/nextflow_slurm_custom.config`.
+You can use the `pipeline/slurm_submit.sh` script as a template to submit the pipeline to your cluster.
+It is recommended to also make a copy of the `pipeline/nextflow_slurm.config` file and modify the `default_queue` parameter
+to match the partition you want to use on your cluster. In this example, we assume the copy is called
+`pipeline/nextflow_slurm_custom.config`, which `slurm_submit.sh` picks up automatically.
 
 ```bash
 #!/bin/bash
@@ -244,21 +254,27 @@ DATA_PATH="path-to-data-folder"
 RESULTS_PATH="path-to-results-folder"
 WORKDIR="path-to-large-workdir"
 
-NXF_VER=22.10.8 DATA_PATH=$DATA_PATH RESULTS_PATH=$RESULTS_PATH nextflow \
+NXF_SYNTAX_PARSER=v1 DATA_PATH=$DATA_PATH RESULTS_PATH=$RESULTS_PATH nextflow \
     -C $PIPELINE_PATH/pipeline/nextflow_slurm_custom.config \
     -log $RESULTS_PATH/nextflow/nextflow.log \
-    run $PIPELINE_PATH/pipeline/main_sorters.nf \
+    run $PIPELINE_PATH/pipeline/main.nf \
     -work-dir $WORKDIR \
-    --job_dispatch_args "--debug --debug-duration 120" \ # additional parameters
+    --job_dispatch.debug=true --job_dispatch.debug_duration=120 \
     -resume
 ```
 
 > [!IMPORTANT]
-> You should change the `--partition` parameter to match the partition you want to use on your cluster. 
-> The same partition should be also indicated as the `queue` argument in the `pipeline/nextflow_slurm_custom.config` file!
+> You should change the `--partition` parameter to match the partition you want to use on your cluster.
+> The same partition should be also indicated as the `default_queue` argument in the `pipeline/nextflow_slurm_custom.config` file!
 
 Then, you can submit the script to the cluster with:
 
 ```bash
 sbatch slurm_submit.sh
 ```
+
+## Code Ocean
+
+On Code Ocean, `pipeline/nextflow.config` runs the pipeline on AWS Batch with `pipeline/params_co.json` as params file.
+The App Panel can expose `benchmark`, `existing`, `sorters`, `sorter` and `extra_params`; any other parameter can be set
+through `extra_params`.
