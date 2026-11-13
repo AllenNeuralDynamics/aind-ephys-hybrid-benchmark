@@ -1,0 +1,2181 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://github.com/AllenNeuralDynamics/aind-ephys-hybrid-benchmark/pipeline/default_params_schema.json",
+    "title": "AIND Ephys Hybrid Benchmark Parameters",
+    "description": "Configuration schema for the AIND ephys hybrid benchmark pipeline. The logging, job_dispatch, preprocessing and spikesorting sections are copied from aind-ephys-pipeline.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "pipeline_version",
+        "logging",
+        "benchmark"
+    ],
+    "properties": {
+        "pipeline_version": {
+            "type": "string",
+            "pattern": "^1\\.5\\.[0-9]+$",
+            "description": "Version of the pipeline the parameters are compatible with. This should be updated when default parameters are changed in a way that is not backward compatible."
+        },
+        "benchmark": {
+            "type": "string",
+            "enum": [
+                "sorters",
+                "lossy"
+            ],
+            "default": "sorters",
+            "description": "sorters: compare the spike sorters in `sorters`. lossy: compare the `compression_cases` with `sorter`."
+        },
+        "existing": {
+            "type": "boolean",
+            "default": false,
+            "description": "Start from existing hybrid datasets (<session>/<case>/{recording,sorting}.zarr) instead of generating them. An s3:// input is passed to job_dispatch.s3_path and not staged."
+        },
+        "sorters": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "enum": [
+                    "kilosort4",
+                    "kilosort25",
+                    "spykingcircus2",
+                    "lupin",
+                    "dartsort"
+                ]
+            },
+            "minItems": 1,
+            "uniqueItems": true,
+            "default": [
+                "kilosort4",
+                "spykingcircus2"
+            ],
+            "description": "Spike sorters to compare (benchmark: sorters)."
+        },
+        "sorter": {
+            "type": "string",
+            "enum": [
+                "kilosort4",
+                "kilosort25",
+                "spykingcircus2",
+                "lupin",
+                "dartsort"
+            ],
+            "default": "kilosort4",
+            "description": "Spike sorter used after compression (benchmark: lossy)."
+        },
+        "compression_cases": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+                "oneOf": [
+                    {
+                        "type": "string",
+                        "const": "lossless"
+                    },
+                    {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                    }
+                ]
+            },
+            "default": [
+                "lossless",
+                3,
+                2.5,
+                2.25
+            ],
+            "description": "Compression cases (benchmark: lossy): 'lossless' (no compression step) or a WavPack bits-per-sample value."
+        },
+        "logging": {
+            "type": "object",
+            "description": "Logging configuration for the pipeline.",
+            "additionalProperties": false,
+            "required": [
+                "package"
+            ],
+            "properties": {
+                "package": {
+                    "type": "string",
+                    "default": "logging",
+                    "description": "The package name for which to configure logging."
+                },
+                "logging_cfg": {
+                    "type": "object",
+                    "description": "Logging configuration for the pipeline.",
+                    "default": {}
+                },
+                "acquisition_name": {
+                    "type": "string",
+                    "description": "Name of the acquisition being processed (set by the pipeline from data_description.json)."
+                },
+                "pipeline_name": {
+                    "type": "string",
+                    "default": "AIND Ephys Pipeline",
+                    "description": "Name of the pipeline (set by the pipeline)."
+                }
+            }
+        },
+        "job_dispatch": {
+            "type": "object",
+            "description": "Parameters for the job dispatch step, which generates JSON job files for parallel processing.",
+            "additionalProperties": false,
+            "properties": {
+                "split_segments": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Whether to split recording segments for parallel processing."
+                },
+                "split_groups": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Whether to process different channel groups separately."
+                },
+                "debug": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Whether to run in DEBUG mode (clips recording to a short duration)."
+                },
+                "debug_duration": {
+                    "type": "number",
+                    "default": 30,
+                    "minimum": 0,
+                    "description": "Duration in seconds of clipped recording in debug mode. Only used if debug is enabled."
+                },
+                "skip_timestamps_check": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Whether to skip the timestamps check."
+                },
+                "multi_session": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Whether to enable multi-session processing."
+                },
+                "min_recording_duration": {
+                    "type": "number",
+                    "default": -1,
+                    "minimum": -1,
+                    "description": "Minimum duration in seconds for a recording to be processed. -1 means this check is disabled."
+                },
+                "input": {
+                    "type": "string",
+                    "enum": [
+                        "aind",
+                        "spikeglx",
+                        "openephys",
+                        "nwb",
+                        "spikeinterface"
+                    ],
+                    "default": "aind",
+                    "description": "Which loader to use for data ingestion."
+                },
+                "nwb_files": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "default": null,
+                    "description": "Comma-separated paths of the NWB files to load. Only used if input is 'nwb'. If null, the .nwb files in the input folder are loaded."
+                },
+                "streaming": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Stream the raw data from a remote session (e.g. s3://) instead of staging it. Only session metadata JSONs are staged."
+                },
+                "remote_path": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "default": null,
+                    "description": "Remote session path to stream from. Filled in by the pipeline from the input path when streaming."
+                },
+                "spikeinterface_info": {
+                    "type": [
+                        "object",
+                        "null"
+                    ],
+                    "default": null,
+                    "description": "Configuration for the spikeinterface loader. Only used when input is 'spikeinterface'.",
+                    "properties": {
+                        "reader_type": {
+                            "type": "string",
+                            "description": "The SpikeInterface reader type (e.g., 'plexon', 'neuralynx', 'intan')."
+                        },
+                        "reader_kwargs": {
+                            "type": "object",
+                            "default": {},
+                            "description": "Keyword arguments passed to the reader (e.g., {'folder': '/path/to/folder'})."
+                        },
+                        "keep_stream_substrings": {
+                            "type": [
+                                "string",
+                                "array",
+                                "null"
+                            ],
+                            "default": null,
+                            "description": "Stream name substrings to keep (e.g., 'AP' or ['AP', 'LFP']).",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "skip_stream_substrings": {
+                            "type": [
+                                "string",
+                                "array",
+                                "null"
+                            ],
+                            "default": null,
+                            "description": "Stream name substrings to skip (e.g., 'NIDQ' or ['USB', 'EVENTS']).",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "probe_paths": {
+                            "type": [
+                                "string",
+                                "object",
+                                "null"
+                            ],
+                            "default": null,
+                            "description": "Path(s) to ProbeInterface JSON file(s). If a dict, keys are stream names and values are probe paths."
+                        }
+                    },
+                    "required": [
+                        "reader_type"
+                    ]
+                },
+                "max_recordings": {
+                    "type": [
+                        "integer",
+                        "null"
+                    ],
+                    "default": null,
+                    "description": "Existing datasets only: maximum number of recordings, randomly sub-sampled. null or -1 means all."
+                },
+                "s3_path": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "default": null,
+                    "description": "Existing datasets only: s3:// root of the hybrid datasets. Set automatically from an s3:// input."
+                },
+                "seed": {
+                    "type": [
+                        "integer",
+                        "null"
+                    ],
+                    "default": null,
+                    "description": "Existing datasets only: random seed for the max_recordings sub-sampling."
+                }
+            }
+        },
+        "hybrid_generation": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Parameters for the hybrid generation step (aind-ephys-hybrid-generation).",
+            "properties": {
+                "min_amp": {
+                    "type": "number",
+                    "default": 50,
+                    "description": "Minimum amplitude (uV) to scale injected templates."
+                },
+                "max_amp": {
+                    "type": "number",
+                    "default": 200,
+                    "description": "Maximum amplitude (uV) to scale injected templates."
+                },
+                "min_depth_percentile": {
+                    "type": "number",
+                    "default": 5,
+                    "minimum": 0,
+                    "maximum": 100,
+                    "description": "Percentile of channel depths used as minimum depth."
+                },
+                "max_depth_percentile": {
+                    "type": "number",
+                    "default": 95,
+                    "minimum": 0,
+                    "maximum": 100,
+                    "description": "Percentile of channel depths used as maximum depth."
+                },
+                "num_units": {
+                    "type": "integer",
+                    "default": 10,
+                    "minimum": 1,
+                    "description": "Number of hybrid units for each case."
+                },
+                "num_cases": {
+                    "type": "integer",
+                    "default": 5,
+                    "minimum": 1,
+                    "description": "Number of hybrid cases for each recording."
+                },
+                "correct_motion": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Whether to estimate motion and move the injected templates accordingly."
+                }
+            }
+        },
+        "compression": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Parameters for the WavPack compression step (aind-ephys-compress). In the lossy benchmark, bps is set per task from compression_cases.",
+            "properties": {
+                "bps": {
+                    "type": [
+                        "number",
+                        "null"
+                    ],
+                    "default": null,
+                    "description": "WavPack bits per sample. null means lossless."
+                },
+                "highpass": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Whether to highpass the recording prior to compression."
+                }
+            }
+        },
+        "preprocessing": {
+            "type": "object",
+            "description": "Parameters for the preprocessing step (filtering, denoising, motion correction).",
+            "additionalProperties": false,
+            "properties": {
+                "job_kwargs": {
+                    "type": "object",
+                    "description": "SpikeInterface job keyword arguments for parallel processing.",
+                    "additionalProperties": false,
+                    "properties": {
+                        "chunk_duration": {
+                            "type": "string",
+                            "default": "1s",
+                            "pattern": "^[0-9]+(\\.[0-9]+)?s$",
+                            "description": "Duration of each processing chunk (e.g., '1s')."
+                        },
+                        "progress_bar": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Whether to display a progress bar."
+                        },
+                        "mp_context": {
+                            "type": "string",
+                            "enum": [
+                                "spawn",
+                                "fork",
+                                "forkserver"
+                            ],
+                            "default": "spawn",
+                            "description": "Multiprocessing context to use for parallel processing."
+                        }
+                    }
+                },
+                "min_preprocessing_duration": {
+                    "type": "number",
+                    "default": 120,
+                    "minimum": 0,
+                    "description": "Minimum recording duration in seconds required to run preprocessing."
+                },
+                "filter_type": {
+                    "type": "string",
+                    "enum": [
+                        "highpass",
+                        "bandpass"
+                    ],
+                    "default": "highpass",
+                    "description": "Type of frequency filter to apply."
+                },
+                "remove_out_channels": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Whether to remove outside-brain channels."
+                },
+                "remove_bad_channels": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Whether to remove detected bad channels."
+                },
+                "max_bad_channel_fraction": {
+                    "type": "number",
+                    "default": 0.5,
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "Maximum fraction of bad channels allowed. If exceeded, the recording is skipped."
+                },
+                "denoising_strategy": {
+                    "type": "string",
+                    "enum": [
+                        "cmr",
+                        "destripe"
+                    ],
+                    "default": "cmr",
+                    "description": "Denoising strategy: common median reference (cmr) or highpass spatial filter (destripe)."
+                },
+                "default_preprocessing_pipeline": {
+                    "type": "object",
+                    "description": "Parameters for each step in the default preprocessing pipeline.",
+                    "additionalProperties": false,
+                    "properties": {
+                        "phase_shift": {
+                            "type": "object",
+                            "description": "Parameters for inter-sample phase shift correction.",
+                            "additionalProperties": false,
+                            "properties": {
+                                "margin_ms": {
+                                    "type": "number",
+                                    "default": 100.0,
+                                    "minimum": 0,
+                                    "description": "Margin in milliseconds for edge effects."
+                                }
+                            }
+                        },
+                        "highpass_filter": {
+                            "type": "object",
+                            "description": "Parameters for the highpass filter.",
+                            "additionalProperties": false,
+                            "properties": {
+                                "freq_min": {
+                                    "type": "number",
+                                    "default": 300.0,
+                                    "minimum": 0,
+                                    "description": "Minimum frequency cutoff in Hz."
+                                }
+                            }
+                        },
+                        "bandpass_filter": {
+                            "type": "object",
+                            "description": "Parameters for the bandpass filter.",
+                            "additionalProperties": false,
+                            "properties": {
+                                "freq_min": {
+                                    "type": "number",
+                                    "default": 300.0,
+                                    "minimum": 0,
+                                    "description": "Minimum frequency cutoff in Hz."
+                                },
+                                "freq_max": {
+                                    "type": "number",
+                                    "default": 6000.0,
+                                    "minimum": 0,
+                                    "description": "Maximum frequency cutoff in Hz."
+                                }
+                            }
+                        },
+                        "detect_and_remove_bad_channels": {
+                            "type": "object",
+                            "description": "Parameters for bad channel detection and removal.",
+                            "additionalProperties": false,
+                            "properties": {
+                                "method": {
+                                    "type": "string",
+                                    "default": "coherence+psd",
+                                    "description": "Method used for bad channel detection."
+                                },
+                                "dead_channel_threshold": {
+                                    "type": "number",
+                                    "default": -0.5,
+                                    "description": "Threshold for dead channel detection."
+                                },
+                                "noisy_channel_threshold": {
+                                    "type": "number",
+                                    "default": 1.0,
+                                    "description": "Threshold for noisy channel detection."
+                                },
+                                "outside_channel_threshold": {
+                                    "type": "number",
+                                    "default": -0.3,
+                                    "description": "Threshold for outside-brain channel detection."
+                                },
+                                "outside_channels_location": {
+                                    "type": "string",
+                                    "enum": [
+                                        "top",
+                                        "bottom",
+                                        "both"
+                                    ],
+                                    "default": "top",
+                                    "description": "Expected location of outside-brain channels on the probe."
+                                },
+                                "n_neighbors": {
+                                    "type": "integer",
+                                    "default": 11,
+                                    "minimum": 1,
+                                    "description": "Number of neighbor channels to use for detection."
+                                },
+                                "channel_filters": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string",
+                                        "enum": [
+                                            "noise",
+                                            "dead",
+                                            "out"
+                                        ]
+                                    },
+                                    "default": [
+                                        "noise",
+                                        "dead",
+                                        "out"
+                                    ],
+                                    "description": "List of channel types to filter out."
+                                },
+                                "seed": {
+                                    "type": "integer",
+                                    "default": 0,
+                                    "description": "Random seed for reproducibility."
+                                }
+                            }
+                        },
+                        "common_reference": {
+                            "type": "object",
+                            "description": "Parameters for common reference removal.",
+                            "additionalProperties": false,
+                            "properties": {
+                                "reference": {
+                                    "type": "string",
+                                    "enum": [
+                                        "global",
+                                        "local"
+                                    ],
+                                    "default": "global",
+                                    "description": "Type of reference: global or local."
+                                },
+                                "operator": {
+                                    "type": "string",
+                                    "enum": [
+                                        "median",
+                                        "average"
+                                    ],
+                                    "default": "median",
+                                    "description": "Operator used for computing the reference."
+                                }
+                            }
+                        },
+                        "highpass_spatial_filter": {
+                            "type": "object",
+                            "description": "Parameters for highpass spatial filter (destripe).",
+                            "additionalProperties": false,
+                            "properties": {
+                                "n_channel_pad": {
+                                    "type": "integer",
+                                    "default": 60,
+                                    "minimum": 0,
+                                    "description": "Number of channels to pad."
+                                },
+                                "n_channel_taper": {
+                                    "type": [
+                                        "integer",
+                                        "null"
+                                    ],
+                                    "default": null,
+                                    "description": "Number of channels for tapering. If null, defaults to n_channel_pad."
+                                },
+                                "direction": {
+                                    "type": "string",
+                                    "default": "y",
+                                    "description": "Direction of the spatial filter."
+                                },
+                                "apply_agc": {
+                                    "type": "boolean",
+                                    "default": true,
+                                    "description": "Whether to apply automatic gain control."
+                                },
+                                "agc_window_length_s": {
+                                    "type": "number",
+                                    "default": 0.01,
+                                    "minimum": 0,
+                                    "description": "Window length in seconds for AGC."
+                                },
+                                "highpass_butter_order": {
+                                    "type": "integer",
+                                    "default": 3,
+                                    "minimum": 1,
+                                    "description": "Order of the Butterworth highpass filter."
+                                },
+                                "highpass_butter_wn": {
+                                    "type": "number",
+                                    "default": 0.01,
+                                    "minimum": 0,
+                                    "description": "Normalized cutoff frequency for the Butterworth filter."
+                                }
+                            }
+                        },
+                        "detect_and_remove_artifacts": {
+                            "type": "object",
+                            "description": "Parameters for detecting and removing artifacts.",
+                            "additionalProperties": true,
+                            "properties": {
+                                "recording_to_detect": {
+                                    "type": "string",
+                                    "default": "pipeline[raw]",
+                                    "description": "Recording to use for artifact detection."
+                                },
+                                "method": {
+                                    "type": "string",
+                                    "default": "saturation",
+                                    "description": "Method for artifact detection and removal."
+                                },
+                                "method_kwargs": {
+                                    "type": [
+                                        "object",
+                                        "null"
+                                    ],
+                                    "default": {},
+                                    "description": "Keyword arguments for the artifact detection method."
+                                },
+                                "mode": {
+                                    "type": "string",
+                                    "default": "zeros",
+                                    "description": "Mode for artifact detection and removal."
+                                }
+                            }
+                        }
+                    }
+                },
+                "custom_preprocessing_pipeline": {
+                    "type": [
+                        "object",
+                        "null"
+                    ],
+                    "default": null,
+                    "description": "Custom preprocessing pipeline configuration. If null, uses the default pipeline."
+                },
+                "motion_correction": {
+                    "type": "object",
+                    "description": "Parameters for motion estimation and correction.",
+                    "additionalProperties": false,
+                    "properties": {
+                        "compute": {
+                            "type": "boolean",
+                            "default": true,
+                            "description": "Whether to compute motion correction."
+                        },
+                        "apply": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Whether to apply motion correction."
+                        },
+                        "preset": {
+                            "type": "string",
+                            "enum": [
+                                "dredge",
+                                "dredge_fast",
+                                "nonrigid_accurate",
+                                "nonrigid_fast_and_accurate",
+                                "rigid_fast",
+                                "kilosort_like"
+                            ],
+                            "default": "dredge_fast",
+                            "description": "Motion correction preset algorithm."
+                        },
+                        "detect_kwargs": {
+                            "type": "object",
+                            "default": {},
+                            "description": "Additional keyword arguments for peak detection."
+                        },
+                        "select_kwargs": {
+                            "type": "object",
+                            "default": {},
+                            "description": "Additional keyword arguments for peak selection."
+                        },
+                        "localize_peaks_kwargs": {
+                            "type": "object",
+                            "default": {},
+                            "description": "Additional keyword arguments for peak localization."
+                        },
+                        "estimate_motion_kwargs": {
+                            "type": "object",
+                            "default": {},
+                            "description": "Additional keyword arguments for motion estimation."
+                        },
+                        "interpolate_motion_kwargs": {
+                            "type": "object",
+                            "default": {},
+                            "description": "Additional keyword arguments for motion interpolation."
+                        }
+                    }
+                }
+            }
+        },
+        "spikesorting": {
+            "type": "object",
+            "description": "Parameters for the spike sorting step.",
+            "additionalProperties": false,
+            "properties": {
+                "kilosort4": {
+                    "$ref": "#/$defs/sorter_wrapper_kilosort4"
+                },
+                "kilosort25": {
+                    "$ref": "#/$defs/sorter_wrapper_kilosort25"
+                },
+                "spykingcircus2": {
+                    "$ref": "#/$defs/sorter_wrapper_spykingcircus2"
+                },
+                "lupin": {
+                    "$ref": "#/$defs/sorter_wrapper_lupin"
+                },
+                "dartsort": {
+                    "$ref": "#/$defs/sorter_wrapper_dartsort"
+                }
+            }
+        },
+        "hybrid_evaluation": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Parameters for the hybrid evaluation step (aind-ephys-hybrid-evaluation).",
+            "properties": {
+                "debug_cases": {
+                    "type": [
+                        "integer",
+                        "null"
+                    ],
+                    "default": null,
+                    "minimum": 1,
+                    "description": "If set, only evaluate this many hybrid cases (debug)."
+                }
+            }
+        }
+    },
+    "$defs": {
+        "sorter_wrapper_kilosort4": {
+            "type": "object",
+            "description": "Kilosort4 spike sorter configuration.",
+            "additionalProperties": false,
+            "properties": {
+                "job_kwargs": {
+                    "$ref": "#/$defs/job_kwargs"
+                },
+                "skip_motion_correction": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Whether to skip the sorter's internal motion correction."
+                },
+                "min_drift_channels": {
+                    "type": "integer",
+                    "default": 96,
+                    "minimum": 1,
+                    "description": "Minimum number of channels required to enable drift correction."
+                },
+                "raise_if_fails": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Whether to raise an error if spike sorting fails."
+                },
+                "clear_cache": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Whether to force PyTorch memory cleanup between runs."
+                },
+                "sorter": {
+                    "type": "object",
+                    "description": "Kilosort4 algorithm-specific parameters.",
+                    "additionalProperties": false,
+                    "properties": {
+                        "batch_size": {
+                            "type": "integer",
+                            "default": 60000,
+                            "minimum": 1,
+                            "description": "Batch size in samples."
+                        },
+                        "nblocks": {
+                            "type": "integer",
+                            "default": 5,
+                            "minimum": 0,
+                            "description": "Number of non-rigid blocks for drift correction. 0 disables drift correction."
+                        },
+                        "Th_universal": {
+                            "type": "number",
+                            "default": 9,
+                            "description": "Spike detection threshold (universal templates)."
+                        },
+                        "Th_learned": {
+                            "type": "number",
+                            "default": 8,
+                            "description": "Spike detection threshold (learned templates)."
+                        },
+                        "do_CAR": {
+                            "type": "boolean",
+                            "default": true,
+                            "description": "Whether to apply common average reference."
+                        },
+                        "invert_sign": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Whether to invert the sign of the data."
+                        },
+                        "nt": {
+                            "type": "integer",
+                            "default": 61,
+                            "minimum": 1,
+                            "description": "Number of temporal samples per waveform."
+                        },
+                        "shift": {
+                            "type": [
+                                "number",
+                                "null"
+                            ],
+                            "default": null,
+                            "description": "Scalar shift to apply to data. If null, computed automatically."
+                        },
+                        "scale": {
+                            "type": [
+                                "number",
+                                "null"
+                            ],
+                            "default": null,
+                            "description": "Scalar scale to apply to data. If null, computed automatically."
+                        },
+                        "artifact_threshold": {
+                            "type": [
+                                "number",
+                                "null"
+                            ],
+                            "default": null,
+                            "description": "Threshold for artifact removal. If null, no artifact removal."
+                        },
+                        "nskip": {
+                            "type": "integer",
+                            "default": 25,
+                            "minimum": 1,
+                            "description": "Number of batches to skip for drift estimation."
+                        },
+                        "whitening_range": {
+                            "type": "integer",
+                            "default": 32,
+                            "minimum": 1,
+                            "description": "Number of channels for whitening."
+                        },
+                        "highpass_cutoff": {
+                            "type": "number",
+                            "default": 300,
+                            "minimum": 0,
+                            "description": "Highpass filter cutoff frequency in Hz."
+                        },
+                        "binning_depth": {
+                            "type": "number",
+                            "default": 5,
+                            "minimum": 0,
+                            "description": "Bin size in micrometers for drift estimation."
+                        },
+                        "sig_interp": {
+                            "type": "number",
+                            "default": 20,
+                            "description": "Sigma for interpolation."
+                        },
+                        "drift_smoothing": {
+                            "type": "array",
+                            "items": {
+                                "type": "number"
+                            },
+                            "default": [
+                                0.5,
+                                0.5,
+                                0.5
+                            ],
+                            "description": "Drift smoothing parameters."
+                        },
+                        "nt0min": {
+                            "type": [
+                                "integer",
+                                "null"
+                            ],
+                            "default": null,
+                            "description": "Minimum time index for template. If null, computed automatically."
+                        },
+                        "dmin": {
+                            "type": [
+                                "number",
+                                "null"
+                            ],
+                            "default": null,
+                            "description": "Minimum vertical spacing between channels. If null, computed automatically."
+                        },
+                        "dminx": {
+                            "type": "number",
+                            "default": 32,
+                            "description": "Minimum horizontal spacing between channels in micrometers."
+                        },
+                        "min_template_size": {
+                            "type": "number",
+                            "default": 10,
+                            "minimum": 0,
+                            "description": "Minimum template size."
+                        },
+                        "template_sizes": {
+                            "type": "integer",
+                            "default": 5,
+                            "minimum": 1,
+                            "description": "Number of template sizes."
+                        },
+                        "nearest_chans": {
+                            "type": "integer",
+                            "default": 10,
+                            "minimum": 1,
+                            "description": "Number of nearest channels for template matching."
+                        },
+                        "nearest_templates": {
+                            "type": "integer",
+                            "default": 100,
+                            "minimum": 1,
+                            "description": "Number of nearest templates to consider."
+                        },
+                        "max_channel_distance": {
+                            "type": [
+                                "number",
+                                "null"
+                            ],
+                            "default": null,
+                            "description": "Maximum channel distance. If null, no limit."
+                        },
+                        "templates_from_data": {
+                            "type": "boolean",
+                            "default": true,
+                            "description": "Whether to derive templates from data."
+                        },
+                        "n_templates": {
+                            "type": "integer",
+                            "default": 6,
+                            "minimum": 1,
+                            "description": "Number of universal templates."
+                        },
+                        "n_pcs": {
+                            "type": "integer",
+                            "default": 6,
+                            "minimum": 1,
+                            "description": "Number of principal components for template features."
+                        },
+                        "Th_single_ch": {
+                            "type": "number",
+                            "default": 6,
+                            "description": "Threshold for single-channel detection."
+                        },
+                        "acg_threshold": {
+                            "type": "number",
+                            "default": 0.2,
+                            "minimum": 0,
+                            "maximum": 1,
+                            "description": "Auto-correlogram threshold for merging."
+                        },
+                        "ccg_threshold": {
+                            "type": "number",
+                            "default": 0.25,
+                            "minimum": 0,
+                            "maximum": 1,
+                            "description": "Cross-correlogram threshold for merging."
+                        },
+                        "cluster_downsampling": {
+                            "type": "integer",
+                            "default": 20,
+                            "minimum": 1,
+                            "description": "Downsampling factor for clustering."
+                        },
+                        "x_centers": {
+                            "type": [
+                                "array",
+                                "null"
+                            ],
+                            "default": null,
+                            "items": {
+                                "type": "number"
+                            },
+                            "description": "X-centers for non-rigid drift correction. If null, computed automatically."
+                        },
+                        "duplicate_spike_ms": {
+                            "type": "number",
+                            "default": 0.25,
+                            "minimum": 0,
+                            "description": "Time window in milliseconds for duplicate spike removal."
+                        },
+                        "save_preprocessed_copy": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Whether to save a copy of the preprocessed data."
+                        },
+                        "torch_device": {
+                            "type": "string",
+                            "default": "auto",
+                            "description": "PyTorch device to use ('auto', 'cuda', 'cpu')."
+                        },
+                        "bad_channels": {
+                            "type": [
+                                "array",
+                                "null"
+                            ],
+                            "default": null,
+                            "items": {
+                                "type": "integer"
+                            },
+                            "description": "List of bad channel indices. If null, auto-detected."
+                        },
+                        "clear_cache": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Whether to clear GPU cache."
+                        },
+                        "save_extra_vars": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Whether to save extra variables for debugging."
+                        },
+                        "do_correction": {
+                            "type": "boolean",
+                            "default": true,
+                            "description": "Whether to apply drift correction."
+                        },
+                        "keep_good_only": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Whether to keep only 'good' labeled units."
+                        },
+                        "skip_kilosort_preprocessing": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Whether to skip Kilosort's internal preprocessing."
+                        },
+                        "use_binary_file": {
+                            "type": [
+                                "boolean",
+                                "null"
+                            ],
+                            "default": null,
+                            "description": "Whether to use a binary file. If null, auto-determined."
+                        },
+                        "delete_recording_dat": {
+                            "type": "boolean",
+                            "default": true,
+                            "description": "Whether to delete the recording .dat file after sorting."
+                        }
+                    }
+                }
+            }
+        },
+        "sorter_wrapper_kilosort25": {
+            "type": "object",
+            "description": "Kilosort2.5 spike sorter configuration.",
+            "additionalProperties": false,
+            "properties": {
+                "job_kwargs": {
+                    "$ref": "#/$defs/job_kwargs"
+                },
+                "skip_motion_correction": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Whether to skip the sorter's internal motion correction."
+                },
+                "min_drift_channels": {
+                    "type": "integer",
+                    "default": 96,
+                    "minimum": 1,
+                    "description": "Minimum number of channels required to enable drift correction."
+                },
+                "raise_if_fails": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Whether to raise an error if spike sorting fails."
+                },
+                "sorter": {
+                    "type": "object",
+                    "description": "Kilosort2.5 algorithm-specific parameters.",
+                    "additionalProperties": false,
+                    "properties": {
+                        "detect_threshold": {
+                            "type": "number",
+                            "default": 6,
+                            "description": "Spike detection threshold."
+                        },
+                        "projection_threshold": {
+                            "type": "array",
+                            "items": {
+                                "type": "number"
+                            },
+                            "default": [
+                                10,
+                                4
+                            ],
+                            "description": "Projection thresholds [initial, final]."
+                        },
+                        "preclust_threshold": {
+                            "type": "number",
+                            "default": 8,
+                            "description": "Pre-clustering threshold."
+                        },
+                        "car": {
+                            "type": "boolean",
+                            "default": true,
+                            "description": "Whether to apply common average reference."
+                        },
+                        "minFR": {
+                            "type": "number",
+                            "default": 0.1,
+                            "minimum": 0,
+                            "description": "Minimum firing rate for a unit."
+                        },
+                        "minfr_goodchannels": {
+                            "type": "number",
+                            "default": 0.1,
+                            "minimum": 0,
+                            "description": "Minimum firing rate for good channels."
+                        },
+                        "nblocks": {
+                            "type": "integer",
+                            "default": 5,
+                            "minimum": 0,
+                            "description": "Number of non-rigid blocks for drift correction."
+                        },
+                        "sig": {
+                            "type": "number",
+                            "default": 20,
+                            "description": "Sigma for drift smoothing."
+                        },
+                        "freq_min": {
+                            "type": "number",
+                            "default": 150,
+                            "minimum": 0,
+                            "description": "Highpass filter frequency in Hz."
+                        },
+                        "sigmaMask": {
+                            "type": "number",
+                            "default": 30,
+                            "description": "Sigma for channel masking."
+                        },
+                        "nPCs": {
+                            "type": "integer",
+                            "default": 3,
+                            "minimum": 1,
+                            "description": "Number of principal components for features."
+                        },
+                        "ntbuff": {
+                            "type": "integer",
+                            "default": 64,
+                            "minimum": 1,
+                            "description": "Buffer size in time samples."
+                        },
+                        "nfilt_factor": {
+                            "type": "integer",
+                            "default": 4,
+                            "minimum": 1,
+                            "description": "Factor for number of filters (nfilt = nchannels * nfilt_factor)."
+                        },
+                        "NT": {
+                            "type": [
+                                "integer",
+                                "null"
+                            ],
+                            "default": null,
+                            "description": "Batch size in samples. If null, auto-determined."
+                        },
+                        "AUCsplit": {
+                            "type": "number",
+                            "default": 0.9,
+                            "minimum": 0,
+                            "maximum": 1,
+                            "description": "AUC threshold for splitting clusters."
+                        },
+                        "do_correction": {
+                            "type": "boolean",
+                            "default": true,
+                            "description": "Whether to apply drift correction."
+                        },
+                        "wave_length": {
+                            "type": "integer",
+                            "default": 61,
+                            "minimum": 1,
+                            "description": "Waveform length in samples."
+                        },
+                        "keep_good_only": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Whether to keep only 'good' labeled units."
+                        },
+                        "skip_kilosort_preprocessing": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Whether to skip Kilosort's internal preprocessing."
+                        },
+                        "scaleproc": {
+                            "type": [
+                                "number",
+                                "null"
+                            ],
+                            "default": null,
+                            "description": "Scaling factor for whitened data. If null, auto-determined."
+                        },
+                        "save_rez_to_mat": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Whether to save rez structure to .mat file."
+                        },
+                        "delete_tmp_files": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "default": [
+                                "matlab_files"
+                            ],
+                            "description": "List of temporary file types to delete after sorting."
+                        },
+                        "delete_recording_dat": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Whether to delete the recording .dat file after sorting."
+                        }
+                    }
+                }
+            }
+        },
+        "sorter_wrapper_lupin": {
+            "type": "object",
+            "description": "Lupin spike sorter configuration.",
+            "additionalProperties": false,
+            "properties": {
+                "job_kwargs": {
+                    "$ref": "#/$defs/job_kwargs"
+                },
+                "sorter": {
+                    "type": "object",
+                    "description": "Lupin algorithm-specific parameters.",
+                    "additionalProperties": false,
+                    "properties": {
+                        "apply_preprocessing": {
+                            "type": "boolean",
+                            "default": true,
+                            "description": "Whether to apply internal preprocessing."
+                        },
+                        "preprocessing_dict": {
+                            "type": "object",
+                            "default": {},
+                            "description": "Custom preprocessing pipeline configuration."
+                        },
+                        "apply_motion_correction": {
+                            "type": "boolean",
+                            "default": true,
+                            "description": "Whether to apply motion correction."
+                        },
+                        "motion_correction_preset": {
+                            "type": "string",
+                            "default": "dredge_fast",
+                            "description": "Motion correction preset."
+                        },
+                        "clustering_ms_before": {
+                            "type": "number",
+                            "default": 0.3,
+                            "minimum": 0,
+                            "description": "Time in ms before spike peak for clustering."
+                        },
+                        "clustering_ms_after": {
+                            "type": "number",
+                            "default": 1.3,
+                            "minimum": 0,
+                            "description": "Time in ms after spike peak for clustering."
+                        },
+                        "whitening_radius_um": {
+                            "type": "number",
+                            "default": 100.0,
+                            "minimum": 0,
+                            "description": "Radius in micrometers for whitening."
+                        },
+                        "detection_radius_um": {
+                            "type": "number",
+                            "default": 50.0,
+                            "minimum": 0,
+                            "description": "Radius in micrometers for spike detection."
+                        },
+                        "features_radius_um": {
+                            "type": "number",
+                            "default": 120.0,
+                            "minimum": 0,
+                            "description": "Radius in micrometers for feature extraction."
+                        },
+                        "split_radius_um": {
+                            "type": "number",
+                            "default": 60.0,
+                            "minimum": 0,
+                            "description": "Radius in micrometers for cluster splitting."
+                        },
+                        "template_radius_um": {
+                            "type": "number",
+                            "default": 100.0,
+                            "minimum": 0,
+                            "description": "Radius in micrometers for template computation."
+                        },
+                        "freq_min": {
+                            "type": "number",
+                            "default": 150.0,
+                            "minimum": 0,
+                            "description": "Minimum frequency in Hz for bandpass filter."
+                        },
+                        "freq_max": {
+                            "type": "number",
+                            "default": 7000.0,
+                            "minimum": 0,
+                            "description": "Maximum frequency in Hz for bandpass filter."
+                        },
+                        "cache_preprocessing_mode": {
+                            "type": "string",
+                            "enum": [
+                                "memory",
+                                "folder",
+                                "no-cache"
+                            ],
+                            "default": "no-cache",
+                            "description": "Caching mode for preprocessing."
+                        },
+                        "peak_sign": {
+                            "$ref": "#/$defs/peak_sign"
+                        },
+                        "detect_threshold": {
+                            "type": "number",
+                            "default": 5.0,
+                            "minimum": 0,
+                            "description": "Spike detection threshold."
+                        },
+                        "n_peaks_per_channel": {
+                            "type": "integer",
+                            "default": 5000,
+                            "minimum": 1,
+                            "description": "Number of peaks per channel for spike selection."
+                        },
+                        "n_svd_components_per_channel": {
+                            "type": "integer",
+                            "default": 5,
+                            "minimum": 1,
+                            "description": "Number of SVD components per channel."
+                        },
+                        "n_pca_features": {
+                            "type": "integer",
+                            "default": 4,
+                            "minimum": 1,
+                            "description": "Number of PCA features for clustering."
+                        },
+                        "clustering_recursive_depth": {
+                            "type": "integer",
+                            "default": 3,
+                            "minimum": 0,
+                            "description": "Recursive depth for clustering."
+                        },
+                        "ms_before": {
+                            "type": "number",
+                            "default": 1.0,
+                            "minimum": 0,
+                            "description": "Time in ms before spike peak for template extraction."
+                        },
+                        "ms_after": {
+                            "type": "number",
+                            "default": 2.5,
+                            "minimum": 0,
+                            "description": "Time in ms after spike peak for template extraction."
+                        },
+                        "template_sparsify_threshold": {
+                            "type": "number",
+                            "default": 1.5,
+                            "minimum": 0,
+                            "description": "Threshold for template sparsification."
+                        },
+                        "template_min_snr_ptp": {
+                            "type": "number",
+                            "default": 4.0,
+                            "minimum": 0,
+                            "description": "Minimum peak-to-peak SNR for template acceptance."
+                        },
+                        "template_max_jitter_ms": {
+                            "type": "number",
+                            "default": 0.2,
+                            "minimum": 0,
+                            "description": "Maximum jitter in milliseconds for template acceptance."
+                        },
+                        "template_matching_engine": {
+                            "type": "string",
+                            "default": "circus-omp",
+                            "description": "Template matching engine."
+                        },
+                        "min_firing_rate": {
+                            "type": "number",
+                            "default": 0.1,
+                            "minimum": 0,
+                            "description": "Minimum firing rate in Hz to keep a unit."
+                        },
+                        "gather_mode": {
+                            "type": "string",
+                            "enum": [
+                                "memory",
+                                "disk"
+                            ],
+                            "default": "memory",
+                            "description": "Mode for gathering results."
+                        },
+                        "job_kwargs": {
+                            "type": "object",
+                            "default": {},
+                            "description": "Additional job keyword arguments for Lupin."
+                        },
+                        "seed": {
+                            "type": [
+                                "integer",
+                                "null"
+                            ],
+                            "default": null,
+                            "description": "Random seed for reproducibility. If null, no seed is set."
+                        },
+                        "save_array": {
+                            "type": "boolean",
+                            "default": true,
+                            "description": "Whether to save intermediate arrays."
+                        },
+                        "debug": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Whether to enable debug mode."
+                        }
+                    }
+                }
+            }
+        },
+        "sorter_wrapper_spykingcircus2": {
+            "type": "object",
+            "description": "SpykingCircus2 spike sorter configuration.",
+            "additionalProperties": false,
+            "properties": {
+                "job_kwargs": {
+                    "$ref": "#/$defs/job_kwargs"
+                },
+                "sorter": {
+                    "type": "object",
+                    "description": "SpykingCircus2 algorithm-specific parameters.",
+                    "additionalProperties": false,
+                    "properties": {
+                        "general": {
+                            "type": "object",
+                            "description": "General parameters.",
+                            "additionalProperties": false,
+                            "properties": {
+                                "ms_before": {
+                                    "type": "number",
+                                    "default": 0.5,
+                                    "minimum": 0,
+                                    "description": "Time in ms before spike peak."
+                                },
+                                "ms_after": {
+                                    "type": "number",
+                                    "default": 1.5,
+                                    "minimum": 0,
+                                    "description": "Time in ms after spike peak."
+                                },
+                                "radius_um": {
+                                    "type": "number",
+                                    "default": 100.0,
+                                    "minimum": 0,
+                                    "description": "Radius in micrometers."
+                                }
+                            }
+                        },
+                        "filtering": {
+                            "type": "object",
+                            "description": "Filtering parameters.",
+                            "additionalProperties": false,
+                            "properties": {
+                                "freq_min": {
+                                    "type": "number",
+                                    "default": 150,
+                                    "minimum": 0,
+                                    "description": "Minimum frequency in Hz."
+                                },
+                                "freq_max": {
+                                    "type": "number",
+                                    "default": 7000,
+                                    "minimum": 0,
+                                    "description": "Maximum frequency in Hz."
+                                },
+                                "ftype": {
+                                    "type": "string",
+                                    "default": "bessel",
+                                    "description": "Filter type."
+                                },
+                                "filter_order": {
+                                    "type": "integer",
+                                    "default": 2,
+                                    "minimum": 1,
+                                    "description": "Filter order."
+                                },
+                                "margin_ms": {
+                                    "type": "number",
+                                    "default": 20,
+                                    "minimum": 0,
+                                    "description": "Margin in milliseconds."
+                                }
+                            }
+                        },
+                        "whitening": {
+                            "type": "object",
+                            "description": "Whitening parameters.",
+                            "additionalProperties": false,
+                            "properties": {
+                                "mode": {
+                                    "type": "string",
+                                    "enum": [
+                                        "local",
+                                        "global"
+                                    ],
+                                    "default": "local",
+                                    "description": "Whitening mode."
+                                },
+                                "regularize": {
+                                    "type": "boolean",
+                                    "default": false,
+                                    "description": "Whether to regularize the whitening matrix."
+                                }
+                            }
+                        },
+                        "detection": {
+                            "type": "object",
+                            "description": "Spike detection parameters.",
+                            "additionalProperties": false,
+                            "properties": {
+                                "method": {
+                                    "type": "string",
+                                    "default": "matched_filtering",
+                                    "description": "Detection method."
+                                },
+                                "method_kwargs": {
+                                    "type": "object",
+                                    "description": "Keyword arguments for the detection method.",
+                                    "properties": {
+                                        "peak_sign": {
+                                            "$ref": "#/$defs/peak_sign"
+                                        },
+                                        "detect_threshold": {
+                                            "type": "number",
+                                            "default": 5,
+                                            "description": "Detection threshold."
+                                        }
+                                    }
+                                },
+                                "pipeline_kwargs": {
+                                    "type": "object",
+                                    "default": {},
+                                    "description": "Pipeline keyword arguments."
+                                }
+                            }
+                        },
+                        "selection": {
+                            "type": "object",
+                            "description": "Spike selection parameters.",
+                            "additionalProperties": false,
+                            "properties": {
+                                "method": {
+                                    "type": "string",
+                                    "default": "uniform",
+                                    "description": "Selection method."
+                                },
+                                "method_kwargs": {
+                                    "type": "object",
+                                    "description": "Keyword arguments for the selection method.",
+                                    "properties": {
+                                        "n_peaks_per_channel": {
+                                            "type": "integer",
+                                            "default": 5000,
+                                            "minimum": 1,
+                                            "description": "Number of peaks per channel."
+                                        },
+                                        "min_n_peaks": {
+                                            "type": "integer",
+                                            "default": 100000,
+                                            "minimum": 1,
+                                            "description": "Minimum total number of peaks."
+                                        },
+                                        "select_per_channel": {
+                                            "type": "boolean",
+                                            "default": false,
+                                            "description": "Whether to select per channel."
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "apply_motion_correction": {
+                            "type": "boolean",
+                            "default": true,
+                            "description": "Whether to apply internal motion correction."
+                        },
+                        "motion_correction": {
+                            "type": "object",
+                            "description": "Internal motion correction parameters.",
+                            "additionalProperties": false,
+                            "properties": {
+                                "preset": {
+                                    "type": "string",
+                                    "default": "dredge_fast",
+                                    "description": "Motion correction preset."
+                                }
+                            }
+                        },
+                        "merging": {
+                            "type": "object",
+                            "description": "Unit merging parameters.",
+                            "additionalProperties": false,
+                            "properties": {
+                                "max_distance_um": {
+                                    "type": "number",
+                                    "default": 50,
+                                    "minimum": 0,
+                                    "description": "Maximum distance in micrometers for merging."
+                                }
+                            }
+                        },
+                        "clustering": {
+                            "type": "object",
+                            "description": "Clustering parameters.",
+                            "additionalProperties": false,
+                            "properties": {
+                                "method": {
+                                    "type": "string",
+                                    "default": "iterative-hdbscan",
+                                    "description": "Clustering method."
+                                },
+                                "method_kwargs": {
+                                    "type": "object",
+                                    "default": {},
+                                    "description": "Keyword arguments for the clustering method."
+                                }
+                            }
+                        },
+                        "cleaning": {
+                            "type": "object",
+                            "description": "Cluster cleaning parameters.",
+                            "additionalProperties": false,
+                            "properties": {
+                                "min_snr": {
+                                    "type": "number",
+                                    "default": 5,
+                                    "minimum": 0,
+                                    "description": "Minimum SNR for a cluster."
+                                },
+                                "max_jitter_ms": {
+                                    "type": "number",
+                                    "default": 0.1,
+                                    "minimum": 0,
+                                    "description": "Maximum jitter in milliseconds."
+                                },
+                                "sparsify_threshold": {
+                                    "type": [
+                                        "number",
+                                        "null"
+                                    ],
+                                    "default": null,
+                                    "description": "Threshold for sparsification. If null, no sparsification."
+                                },
+                                "mean_sd_ratio_threshold": {
+                                    "type": "number",
+                                    "default": 3,
+                                    "minimum": 0,
+                                    "description": "Threshold on the mean-to-standard-deviation ratio for a cluster."
+                                }
+                            }
+                        },
+                        "min_firing_rate": {
+                            "type": "number",
+                            "default": 0.1,
+                            "minimum": 0,
+                            "description": "Minimum firing rate in Hz to keep a unit."
+                        },
+                        "matching": {
+                            "type": "object",
+                            "description": "Template matching parameters.",
+                            "additionalProperties": false,
+                            "properties": {
+                                "method": {
+                                    "type": "string",
+                                    "default": "circus-omp",
+                                    "description": "Matching method."
+                                },
+                                "method_kwargs": {
+                                    "type": "object",
+                                    "default": {},
+                                    "description": "Keyword arguments for the matching method."
+                                },
+                                "pipeline_kwargs": {
+                                    "type": "object",
+                                    "default": {},
+                                    "description": "Pipeline keyword arguments."
+                                }
+                            }
+                        },
+                        "apply_preprocessing": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Whether to apply internal preprocessing."
+                        },
+                        "apply_whitening": {
+                            "type": "boolean",
+                            "default": true,
+                            "description": "Whether to apply whitening."
+                        },
+                        "cache_preprocessing": {
+                            "type": "object",
+                            "description": "Cache parameters for preprocessing.",
+                            "additionalProperties": false,
+                            "properties": {
+                                "mode": {
+                                    "type": "string",
+                                    "enum": [
+                                        "memory",
+                                        "folder",
+                                        "no-cache"
+                                    ],
+                                    "default": "memory",
+                                    "description": "Caching mode."
+                                },
+                                "memory_limit": {
+                                    "type": "number",
+                                    "default": 0.5,
+                                    "minimum": 0,
+                                    "description": "Memory limit as a fraction of available RAM."
+                                }
+                            }
+                        },
+                        "chunk_preprocessing": {
+                            "type": "object",
+                            "description": "Chunk preprocessing parameters.",
+                            "additionalProperties": false,
+                            "properties": {
+                                "memory_limit": {
+                                    "type": [
+                                        "number",
+                                        "null"
+                                    ],
+                                    "default": null,
+                                    "description": "Memory limit. If null, auto-determined."
+                                }
+                            }
+                        },
+                        "multi_units_only": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Whether to only detect multi-unit activity."
+                        },
+                        "job_kwargs": {
+                            "type": "object",
+                            "default": {},
+                            "description": "Additional job keyword arguments for SpykingCircus2."
+                        },
+                        "seed": {
+                            "type": "integer",
+                            "default": 42,
+                            "description": "Random seed for reproducibility."
+                        },
+                        "deterministic_peaks_detection": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Whether to use deterministic peak detection."
+                        },
+                        "debug": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Whether to enable debug mode."
+                        }
+                    }
+                }
+            }
+        },
+        "sorter_wrapper_dartsort": {
+            "type": "object",
+            "description": "DARTsort spike sorter configuration.",
+            "additionalProperties": false,
+            "properties": {
+                "job_kwargs": {
+                    "$ref": "#/$defs/job_kwargs"
+                },
+                "sorter": {
+                    "type": "object",
+                    "description": "DARTsort algorithm-specific parameters.",
+                    "additionalProperties": false,
+                    "properties": {
+                        "do_motion_estimation": {
+                            "type": "boolean",
+                            "default": true,
+                            "description": "Whether to estimate motion (drift) before sorting."
+                        },
+                        "already_preprocessed": {
+                            "type": "string",
+                            "default": "assume_yes_if_float",
+                            "description": "Whether the recording is already preprocessed (e.g. \"assume_yes_if_float\")."
+                        },
+                        "preprocessing": {
+                            "type": "string",
+                            "default": "standardize",
+                            "description": "Preprocessing applied by DARTsort (e.g. \"standardize\")."
+                        },
+                        "preprocessing_dtype": {
+                            "type": "string",
+                            "default": "float32",
+                            "description": "Data type used for preprocessed data."
+                        },
+                        "subsampling_spikes_per_channel": {
+                            "type": "integer",
+                            "default": 5000,
+                            "description": "Maximum number of spikes per channel used for subsampling."
+                        },
+                        "subsampling_presence": {
+                            "type": "number",
+                            "default": 0.025,
+                            "description": "Minimum presence fraction for subsampled spikes."
+                        },
+                        "matching_iterations": {
+                            "type": "integer",
+                            "default": 1,
+                            "description": "Number of template matching iterations."
+                        },
+                        "dredge_only": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Whether to only run motion estimation (DREDge) and skip sorting."
+                        },
+                        "n_jobs_cpu": {
+                            "type": "integer",
+                            "default": 0,
+                            "description": "Number of CPU jobs. 0 uses the default."
+                        },
+                        "n_jobs_gpu": {
+                            "type": "integer",
+                            "default": 0,
+                            "description": "Number of GPU jobs. 0 uses the default."
+                        },
+                        "motion_n_jobs_gpu": {
+                            "type": "integer",
+                            "default": 2,
+                            "description": "Number of GPU jobs for motion estimation."
+                        },
+                        "n_jobs_small": {
+                            "type": "integer",
+                            "default": -2,
+                            "description": "Number of jobs for small CPU tasks. Negative values count from the number of CPUs."
+                        },
+                        "n_jobs_small_gpu": {
+                            "type": "integer",
+                            "default": 4,
+                            "description": "Number of jobs for small GPU tasks."
+                        },
+                        "device": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "default": null,
+                            "description": "Torch device (e.g. \"cuda\"). If null, auto-selected."
+                        },
+                        "executor": {
+                            "type": "string",
+                            "default": "threading_unless_multigpu",
+                            "description": "Executor type used for parallelism."
+                        },
+                        "chunk_length_samples": {
+                            "type": "integer",
+                            "default": 30000,
+                            "description": "Chunk length in samples."
+                        },
+                        "work_in_tmpdir": {
+                            "type": "boolean",
+                            "default": true,
+                            "description": "Whether to work in a temporary directory."
+                        },
+                        "copy_recording_to_tmpdir": {
+                            "type": "string",
+                            "default": "no",
+                            "description": "Whether to copy the recording to the temporary directory (e.g. \"no\")."
+                        },
+                        "workdir_copier": {
+                            "type": "string",
+                            "default": "shutil",
+                            "description": "Method used to copy files to the working directory."
+                        },
+                        "workdir_follow_symlinks": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Whether to follow symlinks when copying to the working directory."
+                        },
+                        "tmpdir_parent": {
+                            "type": "string",
+                            "default": "../scratch",
+                            "description": "Parent directory for temporary files."
+                        },
+                        "save_intermediates": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Whether to save intermediate results."
+                        },
+                        "save_final_features": {
+                            "type": "boolean",
+                            "default": true,
+                            "description": "Whether to save final features."
+                        },
+                        "ms_before": {
+                            "type": "number",
+                            "default": 1.4,
+                            "description": "Waveform window before the peak (ms)."
+                        },
+                        "ms_after": {
+                            "type": "number",
+                            "default": 2.6333333333333333,
+                            "description": "Waveform window after the peak (ms)."
+                        },
+                        "alignment_ms": {
+                            "type": "number",
+                            "default": 1.5,
+                            "description": "Alignment window (ms)."
+                        },
+                        "deduplication_ms": {
+                            "type": "number",
+                            "default": 0.25,
+                            "description": "Deduplication window (ms)."
+                        },
+                        "peak_sign": {
+                            "type": "string",
+                            "default": "both",
+                            "description": "Sign of the peaks to detect.",
+                            "enum": [
+                                "neg",
+                                "pos",
+                                "both"
+                            ]
+                        },
+                        "voltage_threshold": {
+                            "type": "number",
+                            "default": 3.0,
+                            "description": "Detection threshold for subtraction."
+                        },
+                        "matching_threshold": {
+                            "type": "number",
+                            "default": 6.0,
+                            "description": "Detection threshold for template matching."
+                        },
+                        "initial_threshold": {
+                            "type": "number",
+                            "default": 9.0,
+                            "description": "Initial detection threshold."
+                        },
+                        "motion_voltage_threshold": {
+                            "type": "number",
+                            "default": 4.0,
+                            "description": "Detection threshold used for motion estimation."
+                        },
+                        "temporal_pca_rank": {
+                            "type": "integer",
+                            "default": 8,
+                            "description": "Rank of the temporal PCA."
+                        },
+                        "feature_ms_before": {
+                            "type": "number",
+                            "default": 0.75,
+                            "description": "Feature window before the peak (ms)."
+                        },
+                        "feature_ms_after": {
+                            "type": "number",
+                            "default": 1.25,
+                            "description": "Feature window after the peak (ms)."
+                        },
+                        "subtraction_radius_um": {
+                            "type": "number",
+                            "default": 200.0,
+                            "description": "Channel neighborhood radius for subtraction (um)."
+                        },
+                        "deduplication_radius_um": {
+                            "type": "number",
+                            "default": 50.0,
+                            "description": "Channel neighborhood radius for deduplication (um)."
+                        },
+                        "featurization_radius_um": {
+                            "type": "number",
+                            "default": 150.0,
+                            "description": "Channel neighborhood radius for featurization (um)."
+                        },
+                        "fit_radius_um": {
+                            "type": "number",
+                            "default": 75.0,
+                            "description": "Channel neighborhood radius for fitting (um)."
+                        },
+                        "localization_radius_um": {
+                            "type": "number",
+                            "default": 100.0,
+                            "description": "Channel neighborhood radius for localization (um)."
+                        },
+                        "nn_denoiser_class_name": {
+                            "type": "string",
+                            "default": "Decollider",
+                            "description": "Class name of the neural network denoiser."
+                        },
+                        "nn_denoiser_pretrained_path": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "default": null,
+                            "description": "Path to pretrained denoiser weights. If null, uses the default."
+                        },
+                        "amplitude_scaling_stddev": {
+                            "type": "number",
+                            "default": 0.01,
+                            "description": "Standard deviation of the amplitude scaling prior."
+                        },
+                        "amplitude_scaling_boundary": {
+                            "type": "number",
+                            "default": 0.3333333333333333,
+                            "description": "Boundary of the amplitude scaling."
+                        },
+                        "temporal_upsamples": {
+                            "type": "integer",
+                            "default": 4,
+                            "description": "Temporal upsampling factor for templates."
+                        },
+                        "postprocessing": {
+                            "type": "string",
+                            "default": "agglomerate_and_clean",
+                            "description": "Postprocessing method (e.g. \"agglomerate_and_clean\")."
+                        },
+                        "rigid": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Whether to use rigid motion correction."
+                        },
+                        "probe_boundary_padding_um": {
+                            "type": "number",
+                            "default": 100.0,
+                            "description": "Padding beyond the probe boundary (um)."
+                        },
+                        "spatial_bin_length_um": {
+                            "type": "number",
+                            "default": 1.0,
+                            "description": "Spatial bin length for motion estimation (um)."
+                        },
+                        "temporal_bin_length_s": {
+                            "type": "number",
+                            "default": 1.0,
+                            "description": "Temporal bin length for motion estimation (s)."
+                        },
+                        "smoothing_um": {
+                            "type": "number",
+                            "default": 3.0,
+                            "description": "Spatial smoothing (um)."
+                        },
+                        "smoothing_s": {
+                            "type": [
+                                "number",
+                                "null"
+                            ],
+                            "default": null,
+                            "description": "Temporal smoothing (s). If null, disabled."
+                        },
+                        "window_step_um": {
+                            "type": "number",
+                            "default": 400.0,
+                            "description": "Step between non-rigid windows (um)."
+                        },
+                        "window_scale_um": {
+                            "type": "number",
+                            "default": 600.0,
+                            "description": "Scale of non-rigid windows (um)."
+                        },
+                        "window_margin_um": {
+                            "type": [
+                                "number",
+                                "null"
+                            ],
+                            "default": null,
+                            "description": "Margin of non-rigid windows (um). If null, auto-determined."
+                        },
+                        "max_dt_s": {
+                            "type": "number",
+                            "default": 500.0,
+                            "description": "Maximum time difference for pairwise motion comparison (s)."
+                        },
+                        "max_disp_um": {
+                            "type": [
+                                "number",
+                                "null"
+                            ],
+                            "default": null,
+                            "description": "Maximum displacement (um). If null, auto-determined."
+                        },
+                        "correlation_threshold": {
+                            "type": "number",
+                            "default": 0.1,
+                            "description": "Correlation threshold for motion estimation."
+                        },
+                        "min_amplitude": {
+                            "type": [
+                                "number",
+                                "null"
+                            ],
+                            "default": null,
+                            "description": "Minimum amplitude of spikes used for motion estimation. If null, no minimum."
+                        },
+                        "speed_limit_um_per_s": {
+                            "type": "number",
+                            "default": 500.0,
+                            "description": "Maximum drift speed (um/s)."
+                        },
+                        "max_dist_from_median_um": {
+                            "type": "number",
+                            "default": 250.0,
+                            "description": "Maximum distance from the median displacement (um)."
+                        },
+                        "median_neighborhood_bins": {
+                            "type": "integer",
+                            "default": 51,
+                            "description": "Number of bins in the median neighborhood."
+                        },
+                        "motion_batching_mode": {
+                            "type": "string",
+                            "default": "full",
+                            "description": "Batching mode for motion estimation (e.g. \"full\")."
+                        },
+                        "motion_chunk_len_s": {
+                            "type": "number",
+                            "default": 3000.0,
+                            "description": "Chunk length for motion estimation (s)."
+                        },
+                        "fit_matching_models_only": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Whether to only fit the matching models."
+                        },
+                        "save_full_final_residual": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Whether to save the full final residual."
+                        }
+                    }
+                }
+            }
+        },
+        "job_kwargs": {
+            "type": "object",
+            "description": "SpikeInterface job keyword arguments for parallel processing.",
+            "additionalProperties": false,
+            "properties": {
+                "chunk_duration": {
+                    "type": "string",
+                    "default": "1s",
+                    "pattern": "^[0-9]+(\\.[0-9]+)?s$",
+                    "description": "Duration of each processing chunk (e.g., '1s')."
+                },
+                "progress_bar": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Whether to display a progress bar."
+                }
+            }
+        },
+        "peak_sign": {
+            "type": "string",
+            "enum": [
+                "neg",
+                "pos",
+                "both"
+            ],
+            "default": "neg",
+            "description": "Sign of the peak to detect."
+        }
+    }
+}
