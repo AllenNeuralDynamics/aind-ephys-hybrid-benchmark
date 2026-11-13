@@ -7,8 +7,7 @@
     "additionalProperties": false,
     "required": [
         "pipeline_version",
-        "logging",
-        "benchmark"
+        "logging"
     ],
     "properties": {
         "pipeline_version": {
@@ -85,6 +84,44 @@
                 2.25
             ],
             "description": "Compression cases (benchmark: lossy): 'lossless' (no compression step) or a WavPack bits-per-sample value."
+        },
+        "sorting_cases": {
+            "type": "object",
+            "default": {},
+            "description": "Explicit sorting cases, {case_name: {step: {params, repo, commit}}}. Each case is the chain [compress_wavpack] -> preprocessing -> one spikesort_* step. When set, benchmark/sorters/sorter/compression_cases are ignored.",
+            "propertyNames": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+            },
+            "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "preprocessing"
+                ],
+                "properties": {
+                    "compress_wavpack": {
+                        "$ref": "#/$defs/sorting_case_step"
+                    },
+                    "preprocessing": {
+                        "$ref": "#/$defs/sorting_case_step"
+                    },
+                    "spikesort_kilosort4": {
+                        "$ref": "#/$defs/sorting_case_step"
+                    },
+                    "spikesort_kilosort25": {
+                        "$ref": "#/$defs/sorting_case_step"
+                    },
+                    "spikesort_spykingcircus2": {
+                        "$ref": "#/$defs/sorting_case_step"
+                    },
+                    "spikesort_lupin": {
+                        "$ref": "#/$defs/sorting_case_step"
+                    },
+                    "spikesort_dartsort": {
+                        "$ref": "#/$defs/sorting_case_step"
+                    }
+                }
+            }
         },
         "logging": {
             "type": "object",
@@ -2176,6 +2213,25 @@
             ],
             "default": "neg",
             "description": "Sign of the peak to detect."
+        },
+        "sorting_case_step": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "params": {
+                    "type": "object",
+                    "default": {},
+                    "description": "Overrides merged into the step's section of params.json (compression, preprocessing or spikesorting.<sorter>)."
+                },
+                "repo": {
+                    "type": "string",
+                    "description": "Step repo to clone instead of the one pinned in process_versions.env. Its params are not validated."
+                },
+                "commit": {
+                    "type": "string",
+                    "description": "Commit to check out. Defaults to the pinned commit, or HEAD for a custom repo."
+                }
+            }
         }
     }
 }

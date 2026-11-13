@@ -3,7 +3,8 @@
 ## Project Overview
 
 A Nextflow pipeline that benchmarks spike sorting on **hybrid recordings**: ground-truth units injected into real recordings.
-It has two applications, selected by `benchmark` in the params file:
+It compares *sorting cases*: chains `[compress_wavpack] -> preprocessing -> spikesort_<sorter>` that turn each hybrid job file into a sorting folder.
+Cases come from `sorting_cases` (`{name: {step: {params, repo, commit}}}`, examples in `examples/sorting_cases/`) or, when it's empty, from the `benchmark` preset:
 - `sorters`: compares several spike sorters.
 - `lossy`: compares WavPack compression levels with a single sorter.
 
@@ -32,23 +33,29 @@ Step repos are in `../../pipeline-steps/hybrid/` (hybrid steps, compress) and `.
 | `job_dispatch` | aind-ephys-job-dispatch | once (not `existing`) | `job_dispatch` |
 | `hybrid_generation` | aind-ephys-hybrid-generation | per job JSON. Writes `recordings/job_<case>.pkl` and `flattened/` (gt, analyzers, figures) | `hybrid_generation` |
 | `job_dispatch_hybrid` | aind-ephys-hybrid-job-dispatch | once (`existing`). Replaces the two steps above | `job_dispatch` (`max_recordings`, `s3_path`, `seed`) |
-| `compress_wavpack` | aind-ephys-compress | per recording × compression level (`lossy`). `COMPRESSION_BPS` env var = `meta.bps` | `compression` |
-| `preprocessing` | aind-ephys-preprocessing | per recording (× case in `lossy`) | `preprocessing` |
-| `spikesort_<sorter>` | aind-ephys-spikesort-* | each sorter process at most once per run | `spikesorting.<sorter>` |
+| `compress_wavpack` | aind-ephys-compress | per recording × variant with a `compress_wavpack` step. bps comes from the variant's params file | `compression` |
+| `preprocessing` | aind-ephys-preprocessing | per recording × variant | `preprocessing` |
+| `spikesort_<sorter>` | aind-ephys-spikesort-* | per recording × case using that sorter (each process called once) | `spikesorting.<sorter>` |
 | `hybrid_evaluation` | aind-ephys-hybrid-evaluation | once. Publishes to `RESULTS_PATH` | `hybrid_evaluation` |
 | `save_provenance` | (inline) | once. Writes `provenance.json` | – |
 
-- **Channels:** they carry `[meta, files]`. `meta.id` is the job file name without `job_` and the extension, because generated jobs are pickles. In lossy mode, `meta.case` is `lossless` or `wv-<bps>` and `meta.bps` is the bps value.
-- **Sorting case:** it's the sorter name (sorters mode) or `meta.case` (lossy mode). Evaluation gets `(case, file)` pairs staged as `capsule/data/sorting_inputs/in<i>/*` (real inputs, so it works on AWS Batch). It then moves them into `capsule/data/<case>/`, the layout `hybrid-evaluation` expects.
+- **Channels:** they carry `[meta, files]`, and `[meta, files, params_file]` for case steps. `meta.id` is the job file name without `job_` and the extension, because generated jobs are pickles.
+- **Sorting cases** (resolved in the `main.nf` preamble):
+  - Each step's section is base + step `params`, validated against the schema unless the step has a custom `repo`.
+  - Repo/commit travel in `meta` (`compress_*`, `pp_*`, `sort_*`), not the global `versions` map.
+  - A *variant* is the compression + preprocessing config (md5 of its params file + repos/commits). Cases sharing a variant share those tasks; then `combine(by: variant)` fans out to the cases.
+  - Params files: `${workDir}/params/variant_<md5>.json` (compression/preprocessing) and `case_<name>.json` (sorter).
+  - The case-selection keys (`benchmark`, `sorters`, `sorter`, `compression_cases`, `sorting_cases`) are left out of every staged file, so adding a case doesn't invalidate `-resume`.
+- **Evaluation** gets `(case, file)` pairs staged as `capsule/data/sorting_inputs/in<i>/*` (real inputs, so it works on AWS Batch). It then moves them into `capsule/data/<case>/`, the layout `hybrid-evaluation` expects.
 - **Existing datasets on S3:** with `existing` and an `s3://` input, `main.nf` sets `job_dispatch.s3_path` and stages a `no_session` placeholder instead of the data.
 
 ## Configuration
 
 - **Params file:** `pipeline/default_params.json`, validated against `default_params_schema.json` before anything runs and again after all merges.
-  - `logging`, `job_dispatch`, `preprocessing` and `spikesorting` are **copies** of aind-ephys-pipeline's sections. Re-sync them by hand when upstream changes. The hybrid-only keys are `benchmark`, `existing`, `sorters`, `sorter`, `compression_cases`, `hybrid_generation`, `compression`, `hybrid_evaluation` and `job_dispatch.{max_recordings,s3_path,seed}`.
+  - `logging`, `job_dispatch`, `preprocessing` and `spikesorting` are **copies** of aind-ephys-pipeline's sections. Re-sync them by hand when upstream changes. The hybrid-only keys are `benchmark`, `existing`, `sorters`, `sorter`, `compression_cases`, `sorting_cases`, `hybrid_generation`, `compression`, `hybrid_evaluation` and `job_dispatch.{max_recordings,s3_path,seed}`.
 - **Overrides:**
   - dotted CLI flags (`--hybrid_generation.num_cases=2`)
-  - top-level plain flags (`--benchmark lossy`, `--existing`, `--sorters kilosort4,spykingcircus2`)
+  - top-level plain flags (`--benchmark lossy`, `--existing`, `--sorters kilosort4,spykingcircus2`, `--sorting_cases <json or file>`)
   - `--extra_params "<flags>"` (Code Ocean)
   - There are no legacy `*_args` strings.
 - **Merged result:** written to `${workDir}/full_params.json`, then staged as `capsule/params.json`.
@@ -58,7 +65,7 @@ Step repos are in `../../pipeline-steps/hybrid/` (hybrid steps, compress) and `.
 - Never launch Nextflow from inside the repo: it writes `.nextflow/`, `work/` and logs into the launch folder. `cd "$(mktemp -d)"` (or the session scratchpad) and call scripts by absolute path, e.g. `cd "$(mktemp -d)" && bash <repo>/tests/test_pipeline_sorters.sh`.
 - Use `NXF_SYNTAX_PARSER=v1`; the strict parser rejects `main.nf`.
 - Quick check: `nextflow -C <repo>/pipeline/nextflow_local.config run <repo>/pipeline/main.nf -preview --params_file <repo>/pipeline/default_params.json`.
-- Tests: `tests/test_pipeline_{sorters,lossy,existing}.sh` (NWB sample or generated zarrs, spykingcircus2, CPU only). CI (`.github/workflows/test_pipeline.yml`) installs `.github/workflows/nextflow_test.config` as `pipeline/nextflow_local_custom.config`.
+- Tests: `tests/test_pipeline_{sorters,lossy,existing,cases}.sh` (NWB sample or generated zarrs, spykingcircus2, CPU only). CI (`.github/workflows/test_pipeline.yml`) installs `.github/workflows/nextflow_test.config` as `pipeline/nextflow_local_custom.config`.
 
 ## Development Workflow
 

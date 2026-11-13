@@ -16,23 +16,65 @@ It includes the following common steps:
 - [preprocessing](https://github.com/AllenNeuralDynamics/aind-ephys-preprocessing/): phase_shift, highpass filter, denoising (bad channel removal + common median reference ("cmr") or highpass spatial filter - "destripe"), and motion estimation (optionally correction)
 - [hybrid-evaluation](https://github.com/AllenNeuralDynamics/aind-ephys-hybrid-evaluation/): collects and evaluates the results
 
-The steps between the generation and the evaluation are the *spike sorting cases*. The `benchmark` parameter selects one of two applications.
+The steps between the generation and the evaluation are the *sorting cases*: each case is a chain of steps that
+turns every hybrid recording into a spike sorting, and the evaluation compares the cases.
 
-### `benchmark: sorters`: spike sorters comparison
+## Sorting cases
 
-The *spike sorting cases* are the sorters listed in `sorters`. Preprocessing runs once, then each sorter runs on all hybrid recordings:
-- [kilosort2.5](https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-kilosort25/) (`kilosort25`)
-- [kilosort4](https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-kilosort4/) (`kilosort4`)
-- [spykingcircus2](https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-spykingcircus2/) (`spykingcircus2`)
-- [lupin](https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-lupin/) (`lupin`)
-- [dartsort](https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-dartsort/) (`dartsort`)
+A case is a chain of up to three slots, always in this order:
 
-### `benchmark: lossy`: lossy compression
+| Slot | Step | Input | Output |
+|---|---|---|---|
+| `compress_wavpack` (optional) | [aind-ephys-compress](https://github.com/AllenNeuralDynamics/aind-ephys-compress/): WavPack compression, `bps` bits per sample (`null`: lossless) | job file (`job_<id>.json`/`.pkl`, plus the `gt_<id>` folder of generated recordings) | job file of the compressed recording |
+| `preprocessing` (required) | [aind-ephys-preprocessing](https://github.com/AllenNeuralDynamics/aind-ephys-preprocessing/) | job file | preprocessed recording (`preprocessed_<id>`, `preprocessedviz_<id>.json`, optional `binary_<id>.json` and `motion_<id>`) |
+| `spikesort_<sorter>` (exactly one) | [kilosort4](https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-kilosort4/), [kilosort25](https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-kilosort25/), [spykingcircus2](https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-spykingcircus2/), [lupin](https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-lupin/), [dartsort](https://github.com/AllenNeuralDynamics/aind-ephys-spikesort-dartsort/) | preprocessed recording | sorting folder (`spikesorted_<id>`) |
 
-The *spike sorting cases* are the `compression_cases`, each run with the same `sorter`:
-- [wavpack compression](https://github.com/AllenNeuralDynamics/aind-ephys-compress/): lossy compression using [WavPack](https://wavpack.com/) with multiple compression levels (bits per sample - BPS). The `lossless` case skips this step.
-- [preprocessing](https://github.com/AllenNeuralDynamics/aind-ephys-preprocessing/)
-- spike sorting with `sorter` (any of the sorters above)
+So a whole case takes a job file and returns a sorting folder. Each step reads its section of `params.json`
+(`compression`, `preprocessing`, `spikesorting.<sorter>`) and accepts three optional keys:
+
+- `params`: overrides merged into that section, validated against the schema
+- `repo`: a repository to clone instead of the pinned one. A replacement must follow the same input/output
+  contract as its slot, e.g. a custom preprocessing must write the outputs the sorters read. Its `params` are not validated.
+- `commit`: the commit to check out (default: the pinned commit, or `HEAD` for a custom `repo`)
+
+```json
+"sorting_cases": {
+    "ks4_highpass": {
+        "preprocessing": {"params": {"filter_type": "highpass"}},
+        "spikesort_kilosort4": {}
+    },
+    "ks4_bandpass": {
+        "preprocessing": {"params": {"filter_type": "bandpass"}},
+        "spikesort_kilosort4": {}
+    },
+    "ks4_wv3": {
+        "compress_wavpack": {"params": {"bps": 3}},
+        "preprocessing": {},
+        "spikesort_kilosort4": {}
+    }
+}
+```
+
+The case name is its folder and label in the evaluation. Cases with the same compression and preprocessing
+(params, repo, commit) share those tasks: comparing sorters preprocesses each recording only once.
+`--sorting_cases` takes the JSON inline or a path to a JSON file. Examples in [examples/sorting_cases](examples/sorting_cases):
+
+| File | Use case |
+|---|---|
+| [sorters.json](examples/sorting_cases/sorters.json) | Compare sorters (and a sorter with different params) |
+| [lossy.json](examples/sorting_cases/lossy.json) | Compare WavPack compression levels with one sorter |
+| [preprocessing_filters.json](examples/sorting_cases/preprocessing_filters.json) | Compare highpass and bandpass filtering |
+| [custom_step.json](examples/sorting_cases/custom_step.json) | Compare the standard preprocessing with a custom repository |
+
+A new kind of step (e.g. a separate denoiser) needs its own process and slot in `pipeline/main.nf`.
+
+### Presets: `benchmark`
+
+When `sorting_cases` is empty, `benchmark` builds the cases:
+
+- `sorters`: one case per sorter in `sorters`, named after the sorter.
+- `lossy`: one case per entry of `compression_cases`, each run with `sorter`: `lossless` (no compression step)
+  or `wv-<bps>` (WavPack with that BPS).
 
 
 # Input
@@ -66,19 +108,21 @@ and a `provenance.json` with the pipeline version, the repository and commit of 
 
 All parameters are in a single JSON file, by default [pipeline/default_params.json](pipeline/default_params.json).
 It is validated against [pipeline/default_params_schema.json](pipeline/default_params_schema.json) before anything runs.
-The merged parameters are written to `<workDir>/full_params.json` and staged into every step as `params.json`;
-each step reads its own section.
+The merged parameters are written to `<workDir>/full_params.json` and staged as `params.json` into the steps before and
+after the sorting cases. Each case's steps get `<workDir>/params/{variant,case}_*.json`, with the case's overrides merged in.
+Each step reads its own section.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `benchmark` | `sorters` | `sorters` (compare `sorters`) or `lossy` (compare `compression_cases` with `sorter`) |
-| `existing` | `false` | Start from existing hybrid datasets instead of generating them |
+| `sorting_cases` | `{}` | Explicit [sorting cases](#sorting-cases). When set, the four keys below are ignored |
+| `benchmark` | `sorters` | Preset: `sorters` (compare `sorters`) or `lossy` (compare `compression_cases` with `sorter`) |
 | `sorters` | `["kilosort4", "spykingcircus2"]` | Sorters to compare (`benchmark: sorters`) |
 | `sorter` | `kilosort4` | Sorter used after compression (`benchmark: lossy`) |
 | `compression_cases` | `["lossless", 3, 2.5, 2.25]` | `lossless` or WavPack BPS values (`benchmark: lossy`) |
+| `existing` | `false` | Start from existing hybrid datasets instead of generating them |
 | `job_dispatch` | | Job dispatch (input type, debug mode, multi-session, ...) and, for existing datasets, `max_recordings`, `s3_path`, `seed` |
 | `hybrid_generation` | | `min_amp`, `max_amp`, `min_depth_percentile`, `max_depth_percentile`, `num_units`, `num_cases`, `correct_motion` |
-| `compression` | | `highpass` (and `bps`, set per task from `compression_cases`) |
+| `compression` | | `bps` (`null`: lossless) and `highpass`, for cases with a `compress_wavpack` step |
 | `preprocessing` | | Same as in the aind-ephys-pipeline |
 | `spikesorting.<sorter>` | | Same as in the aind-ephys-pipeline |
 | `hybrid_evaluation` | | `debug_cases`: only evaluate this many hybrid cases |
@@ -93,6 +137,7 @@ The schema describes every key. Parameters can be changed in three ways:
 # 2. CLI flags following the JSON layout (top-level keys are plain flags)
 --benchmark lossy --sorter spykingcircus2 --compression_cases lossless,3
 --sorters kilosort4,spykingcircus2 --existing
+--sorting_cases examples/sorting_cases/preprocessing_filters.json
 --hybrid_generation.num_cases=2 --preprocessing.motion_correction.compute=false
 
 # 3. the same flags packed in one string (used on Code Ocean, where only App Panel params are forwarded)

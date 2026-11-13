@@ -37,6 +37,12 @@ def coerceToSchema(value, Map node, Map root) {
     if (node?.get('$ref')) {
         node = node['$ref'].replaceFirst('^#/', '').split('/').inject(root) { n, k -> n[k] }
     }
+    // objects from the CLI: a JSON string (--sorting_cases '{"ks4": {...}}') or a JSON file (--sorting_cases cases.json)
+    if (node?.type == 'object' && value instanceof CharSequence) {
+        def text = value.toString().trim()
+        if (text.startsWith('{')) value = new groovy.json.JsonSlurper().parseText(text)
+        else if (new File(text).isFile()) value = new groovy.json.JsonSlurper().parseText(new File(text).text)
+    }
     if (value instanceof Map) {
         return value.collectEntries { k, v -> [(k): coerceToSchema(v, node?.properties?.get(k) ?: [:], root)] }
     }
@@ -83,7 +89,7 @@ else {
 // (Nextflow turns them into nested maps in `params`); merged before validation so they are checked too.
 // Top-level keys are plain flags: --benchmark lossy, --existing, --sorters kilosort4,spykingcircus2
 def step_keys = ['logging', 'job_dispatch', 'hybrid_generation', 'compression', 'preprocessing', 'spikesorting', 'hybrid_evaluation']
-def top_keys = ['benchmark', 'existing', 'sorters', 'sorter', 'compression_cases']
+def top_keys = ['benchmark', 'existing', 'sorters', 'sorter', 'compression_cases', 'sorting_cases']
 def cli_overrides = [:]
 // Same overrides packed in one string, for Code Ocean (only App Panel params are forwarded), e.g.
 // --extra_params "--benchmark=lossy --hybrid_generation.num_cases=2 --spikesorting.kilosort4.sorter.batch_size=30000"
@@ -229,16 +235,25 @@ if (params.executor == "local") {
 // Full parameter map (a deep copy of the merged JSON), staged into every task as capsule/params.json
 def full_params = new groovy.json.JsonSlurper().parseText(groovy.json.JsonOutput.toJson(json_params))
 
-benchmark = full_params.benchmark
+benchmark = full_params.benchmark ?: 'sorters'
 existing = full_params.existing ?: false
-// sorters benchmark: one case per sorter; lossy benchmark: one sorter, one case per compression level
-sorter_list = benchmark == 'sorters' ? full_params.sorters : [full_params.sorter]
-compression_cases = benchmark == 'lossy' ? full_params.compression_cases : []
-println "BENCHMARK: ${benchmark}"
 println "EXISTING: ${existing}"
-println "SORTERS: ${sorter_list}"
-if (benchmark == 'lossy') {
-    println "COMPRESSION CASES: ${compression_cases}"
+
+// Sorting cases: {name: {step: {params, repo, commit}}}. Each case is a chain of fixed slots
+//   job file -> [compress_wavpack] -> preprocessing -> spikesort_<sorter> -> sorting folder
+// Explicit `sorting_cases` win; otherwise the `benchmark` preset builds them:
+//   sorters: one case per sorter in `sorters`; lossy: one case per `compression_cases` entry with `sorter`
+case_defs = full_params.sorting_cases ?: [:]
+if (case_defs) {
+    println "SORTING CASES: from sorting_cases (benchmark '${benchmark}' ignored)"
+} else if (benchmark == 'sorters') {
+    case_defs = full_params.sorters.collectEntries { s -> [(s): [preprocessing: [:], ("spikesort_${s}".toString()): [:]]] }
+} else {
+    def sort_step = "spikesort_${full_params.sorter}".toString()
+    case_defs = full_params.compression_cases.collectEntries { c ->
+        c == 'lossless' ? ['lossless': [preprocessing: [:], (sort_step): [:]]] :
+            [("wv-${c}".toString()): [compress_wavpack: [params: [bps: c]], preprocessing: [:], (sort_step): [:]]]
+    }
 }
 
 // Existing hybrid datasets on S3 are listed and read by the steps directly: don't stage them
@@ -283,7 +298,10 @@ println "Logging acquisition_name: ${full_params.logging.acquisition_name}"
 def full_params_file = new File("${workDir}/full_params.json")
 full_params_file.parentFile.mkdirs()
 // Rewrite only on change: tasks hash the staged file's mtime, so touching it would invalidate -resume
-def full_params_text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(full_params))
+// The keys choosing the sorting cases are not staged: adding a case must not rerun dispatch/generation or other cases
+def case_selection_keys = ['benchmark', 'sorters', 'sorter', 'compression_cases', 'sorting_cases']
+staged_params = full_params.findAll { k, v -> !(k in case_selection_keys) }
+def full_params_text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(staged_params))
 if (!full_params_file.exists() || full_params_file.text != full_params_text) {
     full_params_file.text = full_params_text
 }
@@ -295,6 +313,81 @@ if (full_params_errors) {
     error "Invalid full parameters (${full_params_file}):\n" + full_params_errors.collect { "  * ${it}" }.join('\n')
 }
 println "Full parameters are valid"
+
+// Resolve the sorting cases. Each step gets its params section (base + step `params`) and its repo/commit
+// (pinned in process_versions.env unless overridden). Cases with the same compression + preprocessing
+// (a "variant") share those tasks; each case gets its own params file for the sorter.
+sorter_steps = ['spikesort_kilosort4', 'spikesort_kilosort25', 'spikesort_spykingcircus2', 'spikesort_lupin', 'spikesort_dartsort']
+def step_section = { step -> step == 'compress_wavpack' ? ['compression'] : step == 'preprocessing' ? ['preprocessing'] : ['spikesorting', step - 'spikesort_'] }
+def step_version_key = { step -> step == 'compress_wavpack' ? 'compression' : step == 'preprocessing' ? 'preprocessing' :
+    ['kilosort4': 'spikesort_ks4', 'kilosort25': 'spikesort_ks25', 'spykingcircus2': 'spikesort_sc2', 'lupin': 'spikesort_lupin', 'dartsort': 'spikesort_dartsort'][step - 'spikesort_'] }
+def json_copy = { m -> new groovy.json.JsonSlurper().parseText(groovy.json.JsonOutput.toJson(m)) }
+def get_section = { m, path -> path.inject(m) { n, k -> n?.get(k) } ?: [:] }
+def set_section = { m, path, v -> path.take(path.size() - 1).inject(m) { n, k -> n[k] } [path[-1]] = v }
+def md5 = { text -> java.security.MessageDigest.getInstance('MD5').digest(text.bytes).encodeHex().toString() }
+def params_dir = new File("${workDir}/params")
+params_dir.mkdirs()
+def write_params = { name, m ->
+    def f = new File(params_dir, "${name}.json")
+    def text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(m))
+    if (!f.exists() || f.text != text) { f.text = text }  // rewrite only on change (keeps -resume)
+    f.toString()
+}
+
+variant_files = [:]   // variant key -> params file
+variant_metas = [:]   // variant key -> meta fields of its compression/preprocessing tasks
+case_list = []        // [variant key, case meta, case params file]
+resolved_cases = [:]  // for provenance
+case_defs.each { case_name, chain ->
+    def sorters_in_case = chain.keySet().findAll { it in sorter_steps }
+    if (sorters_in_case.size() != 1) {
+        error "Sorting case '${case_name}' must have exactly one spikesort_* step, found ${sorters_in_case}"
+    }
+    if (!chain.containsKey('preprocessing')) {
+        error "Sorting case '${case_name}' has no preprocessing step"
+    }
+    def case_params = json_copy(staged_params)
+    def check_params = json_copy(staged_params)  // what is validated: custom-repo sections keep the base values
+    def resolved = [:]
+    chain.each { step, cfg ->
+        def (repo_key, commit_key) = step_version_keys[step_version_key(step)]
+        def custom_repo = cfg.repo && cfg.repo != versions[repo_key]
+        def section = deepMerge(get_section(staged_params, step_section(step)), cfg.params ?: [:])
+        set_section(case_params, step_section(step), section)
+        if (custom_repo) {
+            println "WARN: sorting case '${case_name}' uses a custom ${step} repo (${cfg.repo}): its params are not validated"
+        } else {
+            set_section(check_params, step_section(step), section)
+        }
+        resolved[step] = [repo: cfg.repo ?: versions[repo_key],
+                          commit: cfg.commit ?: (custom_repo ? 'HEAD' : versions[commit_key]),
+                          params: section]
+    }
+    def errors = validate(check_params, "${projectDir}/default_params_schema.json", exitOnError: false)
+    if (errors) {
+        error "Invalid params for sorting case '${case_name}':\n" + errors.collect { "  * ${it}" }.join('\n')
+    }
+    def sort_step = sorters_in_case[0]
+    def compress = resolved['compress_wavpack']
+    // the variant: everything the compression + preprocessing tasks depend on
+    def variant_params = json_copy(case_params)
+    variant_params.spikesorting = staged_params.spikesorting
+    def variant_key = md5(groovy.json.JsonOutput.toJson([variant_params, compress?.subMap(['repo', 'commit']), resolved.preprocessing.subMap(['repo', 'commit'])])).take(10)
+    if (!variant_files.containsKey(variant_key)) {
+        variant_files[variant_key] = write_params("variant_${variant_key}", variant_params)
+        variant_metas[variant_key] = [variant: variant_key,
+                                      compress: compress != null, bps: compress?.params?.bps,
+                                      compress_repo: compress?.repo, compress_commit: compress?.commit,
+                                      pp_repo: resolved.preprocessing.repo, pp_commit: resolved.preprocessing.commit]
+    }
+    case_list << [variant_key,
+                  [case: case_name, sorter: sort_step - 'spikesort_', sort_repo: resolved[sort_step].repo, sort_commit: resolved[sort_step].commit],
+                  write_params("case_${case_name}", case_params)]
+    resolved_cases[case_name] = resolved
+}
+used_sorters = case_list.collect { it[1].sorter }.unique()
+println "SORTING CASES: " + case_list.collect { "${it[1].case} (${it[1].sorter}, variant ${it[0]})" }.join(', ')
+println "PREPROCESSING VARIANTS: ${variant_files.size()}"
 
 // Process definitions
 process job_dispatch {
@@ -459,7 +552,7 @@ process hybrid_generation {
     """
 }
 
-// Lossy benchmark: one task per hybrid recording and compression level (meta.bps)
+// One task per hybrid recording and compression variant (sorting cases with a compress_wavpack step)
 process compress_wavpack {
     tag 'compress-wavpack'
     def container_name = "ghcr.io/allenneuraldynamics/aind-ephys-pipeline-base:${params.container_tag}"
@@ -467,9 +560,8 @@ process compress_wavpack {
 
     input:
     val max_duration_minutes
-    tuple val(meta), path(job_files, stageAs: 'capsule/data/*')
+    tuple val(meta), path(job_files, stageAs: 'capsule/data/*'), path(params_file, stageAs: 'capsule/params.json')
     path ecephys_session_input, stageAs: 'capsule/data/ecephys_session'
-    path params_file, stageAs: 'capsule/params.json'
 
     output:
     tuple val(meta), path('capsule/results/*', arity: '1..*'), emit: results
@@ -482,10 +574,8 @@ process compress_wavpack {
     ${extra_installs_echo}
     ${extra_installs_cmd}
 
-    export CODE_REPO="${versions['COMPRESSION_REPO']}"
-    export CODE_VERSION="${versions['COMPRESSION_VERSION']}"
-    # the compression level of this task (overrides compression.bps in params.json)
-    export COMPRESSION_BPS="${meta.bps}"
+    export CODE_REPO="${meta.compress_repo}"
+    export CODE_VERSION="${meta.compress_commit}"
 
     mkdir -p capsule
     mkdir -p capsule/data
@@ -502,7 +592,7 @@ process compress_wavpack {
 
     echo "[${task.tag}] cloning git repo..."
     ${gitCloneFunction}
-    clone_repo "${versions['COMPRESSION_REPO']}" "${versions['COMPRESSION_VERSION']}"
+    clone_repo "${meta.compress_repo}" "${meta.compress_commit}"
 
     echo "[${task.tag}] running capsule..."
     cd capsule/code
@@ -520,9 +610,8 @@ process preprocessing {
 
     input:
     val max_duration_minutes
-    tuple val(meta), path(job_files, stageAs: 'capsule/data/*')
+    tuple val(meta), path(job_files, stageAs: 'capsule/data/*'), path(params_file, stageAs: 'capsule/params.json')
     path ecephys_session_input, stageAs: 'capsule/data/ecephys_session'
-    path params_file, stageAs: 'capsule/params.json'
 
     output:
     tuple val(meta), path('capsule/results/*', arity: '1..*'), emit: results
@@ -535,8 +624,8 @@ process preprocessing {
     ${extra_installs_echo}
     ${extra_installs_cmd}
 
-    export CODE_REPO="${versions['PREPROCESSING_REPO']}"
-    export CODE_VERSION="${versions['PREPROCESSING_VERSION']}"
+    export CODE_REPO="${meta.pp_repo}"
+    export CODE_VERSION="${meta.pp_commit}"
 
     mkdir -p capsule
     mkdir -p capsule/data
@@ -553,7 +642,7 @@ process preprocessing {
 
     echo "[${task.tag}] cloning git repo..."
     ${gitCloneFunction}
-    clone_repo "${versions['PREPROCESSING_REPO']}" "${versions['PREPROCESSING_VERSION']}"
+    clone_repo "${meta.pp_repo}" "${meta.pp_commit}"
 
     echo "[${task.tag}] running capsule..."
     cd capsule/code
@@ -572,8 +661,7 @@ process spikesort_kilosort25 {
 
     input:
     val max_duration_minutes
-    tuple val(meta), path(preprocessing_results, stageAs: 'capsule/data/*')
-    path params_file, stageAs: 'capsule/params.json'
+    tuple val(meta), path(preprocessing_results, stageAs: 'capsule/data/*'), path(params_file, stageAs: 'capsule/params.json')
 
     output:
     tuple val(meta), path('capsule/results/*', arity: '1..*'), emit: results
@@ -583,8 +671,8 @@ process spikesort_kilosort25 {
     #!/usr/bin/env bash
     set -e
 
-    export CODE_REPO="${versions['SPIKESORT_KS25_REPO']}"
-    export CODE_VERSION="${versions['SPIKESORT_KS25_VERSION']}"
+    export CODE_REPO="${meta.sort_repo}"
+    export CODE_VERSION="${meta.sort_commit}"
 
     mkdir -p capsule
     mkdir -p capsule/data
@@ -599,7 +687,7 @@ process spikesort_kilosort25 {
 
     echo "[${task.tag}] cloning git repo..."
     ${gitCloneFunction}
-    clone_repo "${versions['SPIKESORT_KS25_REPO']}" "${versions['SPIKESORT_KS25_VERSION']}"
+    clone_repo "${meta.sort_repo}" "${meta.sort_commit}"
 
     echo "[${task.tag}] running capsule..."
     cd capsule/code
@@ -618,8 +706,7 @@ process spikesort_kilosort4 {
 
     input:
     val max_duration_minutes
-    tuple val(meta), path(preprocessing_results, stageAs: 'capsule/data/*')
-    path params_file, stageAs: 'capsule/params.json'
+    tuple val(meta), path(preprocessing_results, stageAs: 'capsule/data/*'), path(params_file, stageAs: 'capsule/params.json')
 
     output:
     tuple val(meta), path('capsule/results/*', arity: '1..*'), emit: results
@@ -629,8 +716,8 @@ process spikesort_kilosort4 {
     #!/usr/bin/env bash
     set -e
 
-    export CODE_REPO="${versions['SPIKESORT_KS4_REPO']}"
-    export CODE_VERSION="${versions['SPIKESORT_KS4_VERSION']}"
+    export CODE_REPO="${meta.sort_repo}"
+    export CODE_VERSION="${meta.sort_commit}"
 
     mkdir -p capsule
     mkdir -p capsule/data
@@ -645,7 +732,7 @@ process spikesort_kilosort4 {
 
     echo "[${task.tag}] cloning git repo..."
     ${gitCloneFunction}
-    clone_repo "${versions['SPIKESORT_KS4_REPO']}" "${versions['SPIKESORT_KS4_VERSION']}"
+    clone_repo "${meta.sort_repo}" "${meta.sort_commit}"
 
     echo "[${task.tag}] running capsule..."
     cd capsule/code
@@ -663,8 +750,7 @@ process spikesort_spykingcircus2 {
 
     input:
     val max_duration_minutes
-    tuple val(meta), path(preprocessing_results, stageAs: 'capsule/data/*')
-    path params_file, stageAs: 'capsule/params.json'
+    tuple val(meta), path(preprocessing_results, stageAs: 'capsule/data/*'), path(params_file, stageAs: 'capsule/params.json')
 
     output:
     tuple val(meta), path('capsule/results/*', arity: '1..*'), emit: results
@@ -674,8 +760,8 @@ process spikesort_spykingcircus2 {
     #!/usr/bin/env bash
     set -e
 
-    export CODE_REPO="${versions['SPIKESORT_SC2_REPO']}"
-    export CODE_VERSION="${versions['SPIKESORT_SC2_VERSION']}"
+    export CODE_REPO="${meta.sort_repo}"
+    export CODE_VERSION="${meta.sort_commit}"
 
     mkdir -p capsule
     mkdir -p capsule/data
@@ -690,7 +776,7 @@ process spikesort_spykingcircus2 {
 
     echo "[${task.tag}] cloning git repo..."
     ${gitCloneFunction}
-    clone_repo "${versions['SPIKESORT_SC2_REPO']}" "${versions['SPIKESORT_SC2_VERSION']}"
+    clone_repo "${meta.sort_repo}" "${meta.sort_commit}"
 
     echo "[${task.tag}] running capsule..."
     cd capsule/code
@@ -708,8 +794,7 @@ process spikesort_lupin {
 
     input:
     val max_duration_minutes
-    tuple val(meta), path(preprocessing_results, stageAs: 'capsule/data/*')
-    path params_file, stageAs: 'capsule/params.json'
+    tuple val(meta), path(preprocessing_results, stageAs: 'capsule/data/*'), path(params_file, stageAs: 'capsule/params.json')
 
     output:
     tuple val(meta), path('capsule/results/*', arity: '1..*'), emit: results
@@ -719,8 +804,8 @@ process spikesort_lupin {
     #!/usr/bin/env bash
     set -e
 
-    export CODE_REPO="${versions['SPIKESORT_LUPIN_REPO']}"
-    export CODE_VERSION="${versions['SPIKESORT_LUPIN_VERSION']}"
+    export CODE_REPO="${meta.sort_repo}"
+    export CODE_VERSION="${meta.sort_commit}"
 
     mkdir -p capsule
     mkdir -p capsule/data
@@ -735,7 +820,7 @@ process spikesort_lupin {
 
     echo "[${task.tag}] cloning git repo..."
     ${gitCloneFunction}
-    clone_repo "${versions['SPIKESORT_LUPIN_REPO']}" "${versions['SPIKESORT_LUPIN_VERSION']}"
+    clone_repo "${meta.sort_repo}" "${meta.sort_commit}"
 
     echo "[${task.tag}] running capsule..."
     cd capsule/code
@@ -754,8 +839,7 @@ process spikesort_dartsort {
 
     input:
     val max_duration_minutes
-    tuple val(meta), path(preprocessing_results, stageAs: 'capsule/data/*')
-    path params_file, stageAs: 'capsule/params.json'
+    tuple val(meta), path(preprocessing_results, stageAs: 'capsule/data/*'), path(params_file, stageAs: 'capsule/params.json')
 
     output:
     tuple val(meta), path('capsule/results/*', arity: '1..*'), emit: results
@@ -765,8 +849,8 @@ process spikesort_dartsort {
     #!/usr/bin/env bash
     set -e
 
-    export CODE_REPO="${versions['SPIKESORT_DARTSORT_REPO']}"
-    export CODE_VERSION="${versions['SPIKESORT_DARTSORT_VERSION']}"
+    export CODE_REPO="${meta.sort_repo}"
+    export CODE_VERSION="${meta.sort_commit}"
 
     mkdir -p capsule
     mkdir -p capsule/data
@@ -781,7 +865,7 @@ process spikesort_dartsort {
 
     echo "[${task.tag}] cloning git repo..."
     ${gitCloneFunction}
-    clone_repo "${versions['SPIKESORT_DARTSORT_REPO']}" "${versions['SPIKESORT_DARTSORT_VERSION']}"
+    clone_repo "${meta.sort_repo}" "${meta.sort_commit}"
 
     echo "[${task.tag}] running capsule..."
     cd capsule/code
@@ -892,13 +976,8 @@ workflow {
         ecephys_ch = Channel.fromPath(placeholder.parent.toString() + "/", type: 'any')
     }
 
-    // Provenance: only the steps this run uses are recorded
-    def sorter_keys = ['kilosort25': 'spikesort_ks25', 'kilosort4': 'spikesort_ks4',
-                       'spykingcircus2': 'spikesort_sc2', 'lupin': 'spikesort_lupin',
-                       'dartsort': 'spikesort_dartsort']
-    def used_steps = (existing ? ['job_dispatch_hybrid'] : ['job_dispatch', 'hybrid_generation']) +
-        (benchmark == 'lossy' ? ['compression'] : []) + ['preprocessing'] +
-        sorter_list.collect { sorter_keys[it] } + ['hybrid_evaluation']
+    // Provenance: dispatch/generation/evaluation pins, plus each sorting case's resolved steps
+    def used_steps = (existing ? ['job_dispatch_hybrid'] : ['job_dispatch', 'hybrid_generation']) + ['hybrid_evaluation']
     def provenance = [
         pipeline_url: pipelineUrl,
         pipeline_version: pipelineVersion,
@@ -906,13 +985,12 @@ workflow {
         extra_installs: params.extra_installs,
         benchmark: benchmark,
         existing: existing,
-        sorters: sorter_list,
-        compression_cases: compression_cases,
         command_line: workflow.commandLine,
         steps: used_steps.collectEntries { step ->
             def keys = step_version_keys[step]
             [(step): [repo: versions[keys[0]], commit: versions[keys[1]]]]
         },
+        sorting_cases: resolved_cases,
         parameters: [
             params_file: params.params_file ?: 'default_params.json',
             params_file_content: json_params,
@@ -947,27 +1025,23 @@ workflow {
                 .collect { id, id_files -> [[id: id], id_files] }
         }
 
-    if (benchmark == 'lossy') {
-        // one stream per compression case; 'lossless' skips the compression step
-        stream_cases = streams
-            .combine(Channel.fromList(compression_cases))
-            .map { meta, job, c -> c == 'lossless' ? [meta + [case: 'lossless', bps: null], job] : [meta + [case: "wv-${c}".toString(), bps: c], job] }
-        compress_out = compress_wavpack(
-            max_duration_minutes,
-            stream_cases.filter { meta, job -> meta.bps != null },
-            ecephys_ch.collect(),
-            full_params_ch
-        )
-        preprocessing_in = stream_cases.filter { meta, job -> meta.bps == null }.mix(compress_out.results)
-    } else {
-        preprocessing_in = streams
-    }
+    // One item per stream and variant (shared compression + preprocessing), with the variant's params file
+    stream_variants = streams
+        .combine(Channel.fromList(variant_metas.values().toList()))
+        .map { meta, job, vmeta -> [meta + vmeta, job, file(variant_files[vmeta.variant])] }
+    compress_out = compress_wavpack(
+        max_duration_minutes,
+        stream_variants.filter { meta, job, pfile -> meta.compress },
+        ecephys_ch.collect()
+    )
+    preprocessing_in = stream_variants
+        .filter { meta, job, pfile -> !meta.compress }
+        .mix(compress_out.results.map { meta, files -> [meta, files, file(variant_files[meta.variant])] })
 
     preprocessing_out = preprocessing(
         max_duration_minutes,
         preprocessing_in,
-        ecephys_ch.collect(),
-        full_params_ch
+        ecephys_ch.collect()
     )
 
     // Streams whose preprocessing wrote error.txt: don't launch sorting for them
@@ -975,26 +1049,32 @@ workflow {
     preprocessing_ok = preprocessing_out.results.filter { meta, files -> !isFailed(files) }
     preprocessing_out.results
         .filter { meta, files -> isFailed(files) }
-        .view { meta, files -> "Recording skipped after preprocessing: ${meta.id} ${meta.case ?: ''}" }
+        .view { meta, files -> "Recording skipped after preprocessing: ${meta.id} (variant ${meta.variant})" }
 
-    // Spike sorting: each sorter process runs at most once, on all streams.
-    // The sorting case is the sorter (sorters benchmark) or the compression case (lossy benchmark)
-    def caseOf = { name, meta -> benchmark == 'sorters' ? name : meta.case }
+    // Fan each preprocessed stream out to the cases of its variant, with the case's params file
+    sorting_in = preprocessing_ok
+        .map { meta, files -> [meta.variant, meta, files] }
+        .combine(Channel.fromList(case_list.collect { key, cmeta, pfile -> [key, cmeta, file(pfile)] }), by: 0)
+        .map { key, meta, files, cmeta, pfile -> [meta + cmeta, files, pfile] }
+
+    // Spike sorting: each sorter process runs at most once, on the items of all cases using it
+    def forSorter = { s -> sorting_in.filter { meta, files, pfile -> meta.sorter == s } }
+    def byCase = { meta, files -> [meta.case, files] }
     sorted = Channel.empty()
-    if ('kilosort4' in sorter_list) {
-        sorted = sorted.mix(spikesort_kilosort4(max_duration_minutes, preprocessing_ok, full_params_ch).results.map { meta, files -> [caseOf('kilosort4', meta), files] })
+    if ('kilosort4' in used_sorters) {
+        sorted = sorted.mix(spikesort_kilosort4(max_duration_minutes, forSorter('kilosort4')).results.map(byCase))
     }
-    if ('kilosort25' in sorter_list) {
-        sorted = sorted.mix(spikesort_kilosort25(max_duration_minutes, preprocessing_ok, full_params_ch).results.map { meta, files -> [caseOf('kilosort25', meta), files] })
+    if ('kilosort25' in used_sorters) {
+        sorted = sorted.mix(spikesort_kilosort25(max_duration_minutes, forSorter('kilosort25')).results.map(byCase))
     }
-    if ('spykingcircus2' in sorter_list) {
-        sorted = sorted.mix(spikesort_spykingcircus2(max_duration_minutes, preprocessing_ok, full_params_ch).results.map { meta, files -> [caseOf('spykingcircus2', meta), files] })
+    if ('spykingcircus2' in used_sorters) {
+        sorted = sorted.mix(spikesort_spykingcircus2(max_duration_minutes, forSorter('spykingcircus2')).results.map(byCase))
     }
-    if ('lupin' in sorter_list) {
-        sorted = sorted.mix(spikesort_lupin(max_duration_minutes, preprocessing_ok, full_params_ch).results.map { meta, files -> [caseOf('lupin', meta), files] })
+    if ('lupin' in used_sorters) {
+        sorted = sorted.mix(spikesort_lupin(max_duration_minutes, forSorter('lupin')).results.map(byCase))
     }
-    if ('dartsort' in sorter_list) {
-        sorted = sorted.mix(spikesort_dartsort(max_duration_minutes, preprocessing_ok, full_params_ch).results.map { meta, files -> [caseOf('dartsort', meta), files] })
+    if ('dartsort' in used_sorters) {
+        sorted = sorted.mix(spikesort_dartsort(max_duration_minutes, forSorter('dartsort')).results.map(byCase))
     }
 
     // Evaluation: one (case, file) pair per sorting output file, staged as real inputs (works on AWS Batch)
