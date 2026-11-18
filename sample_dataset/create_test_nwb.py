@@ -50,6 +50,8 @@ for n in range(num_files):
                 ],
             )
         )
+        # spikeinterface >= 0.105 keeps locations on the probe only, but neuroconv writes rel_x/rel_y from this property
+        recording.set_property("location", recording.get_channel_locations())
         # Add channel properties (group_name property to associate electrodes with group)
         recording.set_channel_groups([probe_device_name] * recording.get_num_channels())
         electrical_series_name = f"ElectricalSeries{probe_device_name}"
