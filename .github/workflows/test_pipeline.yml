@@ -42,7 +42,7 @@ jobs:
       - name: Install packages
         run: |
           python -m pip install --upgrade pip
-          pip install spikeinterface neuroconv pynwb
+          pip install spikeinterface==0.105.5 neuroconv==0.10.2 pynwb==4.2.0
 
       - name: Set up Nextflow
         uses: nf-core/setup-nextflow@v2
