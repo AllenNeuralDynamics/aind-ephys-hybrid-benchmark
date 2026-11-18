@@ -8,6 +8,52 @@ The pipeline is based on [Nextflow](https://www.nextflow.io/) and follows the sa
 runs on every backend, all parameters live in one JSON file validated against a schema, and each step clones its
 repository at the commit pinned in `pipeline/process_versions.env`.
 
+```mermaid
+flowchart LR
+    %% Input/Output
+    input[("📥 Input<br/>Ephys data or<br/>existing hybrid datasets")]
+    output[("📤 Output<br/>Evaluation tables + figures<br/>provenance.json")]
+
+    %% Deployment
+    subgraph deploy["🚀 Deployment"]
+        direction TB
+        co["Code Ocean / SLURM / Local<br/><a href='pipeline/main.nf'>main.nf</a>"]
+    end
+    containers["☁️ <b>Containers</b><br/>aind-ephys-pipeline images<br/>from GHCR"]
+
+    %% Hybrid recordings
+    subgraph hybrid["🧬 Hybrid recordings"]
+        direction TB
+        gen["Job Dispatch<br/>Hybrid Generation"]
+        existing["Hybrid Job Dispatch<br/>(existing: true)"]
+    end
+
+    %% Sorting cases: job file in, sorting folder out
+    subgraph cases["🔀 <b><a href='#sorting-cases'>Sorting cases</a></b>: job file → sorting folder"]
+        direction TB
+        caseA["case A<br/>Preprocessing → Kilosort4"]
+        caseB["case B<br/>Preprocessing (bandpass) → Kilosort4"]
+        caseC["case C<br/>WavPack → Preprocessing → SpykingCircus2"]
+    end
+
+    eval["📊 Hybrid Evaluation<br/>compares the cases"]
+
+    %% Connections
+    input --> hybrid
+    hybrid -->|"job files"| cases
+    cases -->|"sorting folders"| eval
+    eval --> output
+    deploy -.->|"orchestrates"| cases
+    containers -.->|"provide runtime"| cases
+
+    %% Styling
+    classDef infra fill:#fff4e6,stroke:#ff9800,stroke-width:2px
+    classDef data fill:#e8f5e9,stroke:#4caf50,stroke-width:3px
+
+    class containers,deploy infra
+    class input,output data
+```
+
 It includes the following common steps:
 
 - [job-dispatch](https://github.com/AllenNeuralDynamics/aind-ephys-job-dispatch/): generates a list of JSON files to be processed in parallel. Parallelization is performed over multiple probes and multiple shanks (e.g., for NP2-4shank probes). The steps from `hybrid-generation` to `spike-sorting` are run in parallel.
