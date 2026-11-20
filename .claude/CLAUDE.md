@@ -30,8 +30,8 @@ Step repos are in `../../pipeline-steps/hybrid/` (hybrid steps, compress) and `.
 
 | Process | Repo | Runs | params.json section |
 |---|---|---|---|
-| `job_dispatch` | aind-ephys-job-dispatch | once (not `existing`) | `job_dispatch` |
-| `hybrid_generation` | aind-ephys-hybrid-generation | per job JSON. Writes `recordings/job_<case>.pkl` and `flattened/` (gt, analyzers, figures) | `hybrid_generation` |
+| `job_dispatch` | aind-ephys-job-dispatch | per session (not `existing`) | `job_dispatch` |
+| `hybrid_generation` | aind-ephys-hybrid-generation | per job JSON, with its session. Writes `recordings/job_<case>.pkl` and `flattened/` (gt, analyzers, figures) | `hybrid_generation` |
 | `job_dispatch_hybrid` | aind-ephys-hybrid-job-dispatch | once (`existing`). Replaces the two steps above | `job_dispatch` (`max_recordings`, `s3_path`, `seed`) |
 | `compress_wavpack` | aind-ephys-compress | per recording × variant with a `compress_wavpack` step. bps comes from the variant's params file | `compression` |
 | `preprocessing` | aind-ephys-preprocessing | per recording × variant | `preprocessing` |
@@ -45,14 +45,16 @@ Step repos are in `../../pipeline-steps/hybrid/` (hybrid steps, compress) and `.
   - Repo/commit travel in `meta` (`compress_*`, `pp_*`, `sort_*`), not the global `versions` map.
   - A *variant* is the compression + preprocessing config (md5 of its params file + repos/commits). Cases sharing a variant share those tasks; then `combine(by: variant)` fans out to the cases.
   - Params files: `${workDir}/params/variant_<md5>.json` (compression/preprocessing) and `case_<name>.json` (sorter).
-  - The case-selection keys (`benchmark`, `sorters`, `sorter`, `compression_cases`, `sorting_cases`) are left out of every staged file, so adding a case doesn't invalidate `-resume`.
+  - The input and case-selection keys (`sessions_file`, `benchmark`, `sorters`, `sorter`, `compression_cases`, `sorting_cases`) are left out of every staged file, so adding a case doesn't invalidate `-resume`.
 - **Evaluation** gets `(case, file)` pairs staged as `capsule/data/sorting_inputs/in<i>/*` (real inputs, so it works on AWS Batch). It then moves them into `capsule/data/<case>/`, the layout `hybrid-evaluation` expects.
+- **Sessions:** `session_list` holds `[name, path]` pairs: one entry per `sessions_file` line (named after its basename), or else one `ecephys_session` entry for the input folder. Every step that reads a session stages it as `session_input/*` and moves it to `capsule/data/<name>`, because job files store recording paths relative to `capsule/data`: job dispatch, generation, compress, preprocessing (`meta.session`) and evaluation (all of them).
+- **Streaming** (`job_dispatch.streaming`, default `true`): decided per session in the preamble. Only remote `aind` sessions stream: `aind_partial_staging` (copied from upstream) stages their metadata into `${workDir}/streaming/<name>`, which then takes the session's place. Each session gets `${workDir}/params/session_<name>.json` for `job_dispatch`, with its own `streaming`/`remote_path`. The hybrid steps read `global_job_kwargs` (default `mp_context: forkserver`), because forked workers can't reuse S3 clients.
 - **Existing datasets on S3:** with `existing` and an `s3://` input, `main.nf` sets `job_dispatch.s3_path` and stages a `no_session` placeholder instead of the data.
 
 ## Configuration
 
 - **Params file:** `pipeline/default_params.json`, validated against `default_params_schema.json` before anything runs and again after all merges.
-  - `logging`, `job_dispatch`, `preprocessing` and `spikesorting` are **copies** of aind-ephys-pipeline's sections. Re-sync them by hand when upstream changes. The hybrid-only keys are `benchmark`, `existing`, `sorters`, `sorter`, `compression_cases`, `sorting_cases`, `hybrid_generation`, `compression`, `hybrid_evaluation` and `job_dispatch.{max_recordings,s3_path,seed}`.
+  - `logging`, `global_job_kwargs`, `job_dispatch`, `preprocessing` and `spikesorting` are **copies** of aind-ephys-pipeline's sections. Re-sync them by hand when upstream changes. The hybrid-only keys are `benchmark`, `existing`, `sessions_file`, `sorters`, `sorter`, `compression_cases`, `sorting_cases`, `hybrid_generation`, `compression`, `hybrid_evaluation` and `job_dispatch.{max_recordings,s3_path,seed}`.
 - **Overrides:**
   - dotted CLI flags (`--hybrid_generation.num_cases=2`)
   - top-level plain flags (`--benchmark lossy`, `--existing`, `--sorters kilosort4,spykingcircus2`, `--sorting_cases <json or file>`)
@@ -65,7 +67,7 @@ Step repos are in `../../pipeline-steps/hybrid/` (hybrid steps, compress) and `.
 - Never launch Nextflow from inside the repo: it writes `.nextflow/`, `work/` and logs into the launch folder. `cd "$(mktemp -d)"` (or the session scratchpad) and call scripts by absolute path, e.g. `cd "$(mktemp -d)" && bash <repo>/tests/test_pipeline_sorters.sh`.
 - Use `NXF_SYNTAX_PARSER=v1`; the strict parser rejects `main.nf`.
 - Quick check: `nextflow -C <repo>/pipeline/nextflow_local.config run <repo>/pipeline/main.nf -preview --params_file <repo>/pipeline/default_params.json`.
-- Tests: `tests/test_pipeline_{sorters,lossy,existing,cases}.sh` (NWB sample or generated zarrs, spykingcircus2, CPU only). CI (`.github/workflows/test_pipeline.yml`) installs `.github/workflows/nextflow_test.config` as `pipeline/nextflow_local_custom.config`.
+- Tests: `tests/test_pipeline_{sorters,lossy,existing,cases,sessions}.sh` (NWB sample or generated zarrs, spykingcircus2, CPU only). CI (`.github/workflows/test_pipeline.yml`) installs `.github/workflows/nextflow_test.config` as `pipeline/nextflow_local_custom.config`.
 
 ## Development Workflow
 

@@ -29,6 +29,14 @@
             "default": false,
             "description": "Start from existing hybrid datasets (<session>/<case>/{recording,sorting}.zarr) instead of generating them. An s3:// input is passed to job_dispatch.s3_path and not staged."
         },
+        "sessions_file": {
+            "type": [
+                "string",
+                "null"
+            ],
+            "default": null,
+            "description": "Text file listing the sessions to process, one per line (local path or s3:// URL; lines starting with '#' or '//' are skipped). Each session is staged under its basename and dispatched separately. Not supported with existing: true."
+        },
         "sorters": {
             "type": "array",
             "items": {
@@ -152,6 +160,34 @@
                 }
             }
         },
+        "global_job_kwargs": {
+            "type": "object",
+            "description": "SpikeInterface job keyword arguments used by every step. A step's own job_kwargs override these key by key.",
+            "additionalProperties": true,
+            "properties": {
+                "chunk_duration": {
+                    "type": "string",
+                    "default": "1s",
+                    "pattern": "^[0-9]+(\\.[0-9]+)?s$",
+                    "description": "Duration of each processing chunk (e.g., '1s')."
+                },
+                "progress_bar": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Whether to display a progress bar."
+                },
+                "mp_context": {
+                    "type": "string",
+                    "enum": [
+                        "spawn",
+                        "fork",
+                        "forkserver"
+                    ],
+                    "default": "forkserver",
+                    "description": "Multiprocessing context to use for parallel processing."
+                }
+            }
+        },
         "job_dispatch": {
             "type": "object",
             "description": "Parameters for the job dispatch step, which generates JSON job files for parallel processing.",
@@ -216,8 +252,8 @@
                 },
                 "streaming": {
                     "type": "boolean",
-                    "default": false,
-                    "description": "Stream the raw data from a remote session (e.g. s3://) instead of staging it. Only session metadata JSONs are staged."
+                    "default": true,
+                    "description": "Remote (s3://) AIND sessions are read from S3 by every step, and only their metadata is staged. Other sessions are staged in full."
                 },
                 "remote_path": {
                     "type": [

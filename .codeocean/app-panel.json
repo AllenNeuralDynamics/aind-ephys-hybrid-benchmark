@@ -50,6 +50,14 @@
 			]
 		},
 		{
+			"id": "xhxa3WPLLRbTuybU",
+			"name": "sessions file",
+			"param_name": "sessions_file",
+			"description": "Path to session txt file relative to pipeline/ folder (e.g., ../data/np1_session.txt)",
+			"type": "text",
+			"value_type": "string"
+		},
+		{
 			"id": "x23d79uNqOLOD5Q6",
 			"name": "compression cases",
 			"param_name": "compression_cases",
