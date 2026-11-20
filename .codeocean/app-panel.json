@@ -1,0 +1,69 @@
+{
+	"version": 1,
+	"named_parameters": true,
+	"parameters": [
+		{
+			"id": "66LFrAhAgznbzxez",
+			"name": "benchmark",
+			"param_name": "benchmark",
+			"type": "list",
+			"value_type": "string",
+			"default_value": "sorters",
+			"extra_data": [
+				"sorters",
+				"lossy"
+			]
+		},
+		{
+			"id": "QLYpLEzwKpinzHZk",
+			"name": "sorters",
+			"param_name": "sorters",
+			"description": "Sorters to run for \"sorters\" benchmark, comma-separated",
+			"type": "text",
+			"value_type": "string"
+		},
+		{
+			"id": "Y5kqszfmtMC06C5T",
+			"name": "existing",
+			"param_name": "existing",
+			"type": "list",
+			"value_type": "string",
+			"default_value": "true",
+			"extra_data": [
+				"false",
+				"true"
+			]
+		},
+		{
+			"id": "aealLyNDpU41zGi0",
+			"name": "benchmark dataset",
+			"param_name": "ecephys_url",
+			"description": "Benchmark dataset for existing=true",
+			"type": "list",
+			"value_type": "string",
+			"default_value": "s3://aind-benchmark-data/ephys-hybrid-evaluation/sorters/np1",
+			"extra_data": [
+				"s3://aind-benchmark-data/ephys-hybrid-evaluation/sorters/np1",
+				"s3://aind-benchmark-data/ephys-hybrid-evaluation/sorters/np2",
+				"s3://aind-benchmark-data/ephys-hybrid-evaluation/lossy/np1",
+				"s3://aind-benchmark-data/ephys-hybrid-evaluation/lossy/np2"
+			]
+		},
+		{
+			"id": "x23d79uNqOLOD5Q6",
+			"name": "compression cases",
+			"param_name": "compression_cases",
+			"description": "Compression cases for \"lossy\" benchmark, comma-separated. Can be \"lossless\" or bps values, e,g, lossless,3,2.5",
+			"type": "text",
+			"value_type": "string"
+		},
+		{
+			"id": "5rbv8gLQihIgsuV5",
+			"name": "extra params",
+			"param_name": "extra_params",
+			"description": "Extra params",
+			"type": "text",
+			"value_type": "string"
+		}
+	]
+}
