@@ -22,6 +22,11 @@
             "format": "%(message)s"
         }
     },
+    "global_job_kwargs": {
+        "chunk_duration": "1s",
+        "progress_bar": false,
+        "mp_context": "forkserver"
+    },
     "job_dispatch": {
         "split_segments": true,
         "split_groups": true,
@@ -32,7 +37,7 @@
         "min_recording_duration": -1,
         "input": "aind",
         "nwb_files": null,
-        "streaming": false,
+        "streaming": true,
         "remote_path": null,
         "max_recordings": null,
         "s3_path": null,

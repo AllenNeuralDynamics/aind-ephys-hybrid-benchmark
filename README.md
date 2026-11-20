@@ -153,7 +153,11 @@ Each entry is what you would otherwise put in the input folder: an AIND session 
 folder, or an NWB file. It is staged under its basename, and each session gets its own job dispatch task. Hybrid
 generation, compression and preprocessing then stage only the session they read; the evaluation stages all of them.
 
-- **Staging:** Nextflow copies each S3 session in full (raw data included), so plan for the time and disk space.
+- **Streaming** (`job_dispatch.streaming`, default `true`): a remote (`s3://`) AIND session is not copied. Only its
+  metadata (session JSONs and the small `ecephys_clipped` files, a few MB) is staged, and every step reads the
+  recordings from S3 through the paths in the job files. The session must sit at the bucket root
+  (`s3://<bucket>/<session>`). Any other session (local, or NWB/SpikeGLX/Open Ephys input) is staged in full, which
+  for S3 means copying it, raw data included. The same applies to a single remote input (`ecephys_url`).
 - **Names:** entries must have different basenames. For AIND input the session name comes from `data_description.json`,
   so every session needs one.
 - **`multi_session`:** it is forced to `true`, since it is what keeps recording names unique.
@@ -198,6 +202,7 @@ Each step reads its own section.
 | `spikesorting.<sorter>` | | Same as in the aind-ephys-pipeline |
 | `hybrid_evaluation` | | `debug_cases`: only evaluate this many hybrid cases |
 | `logging` | | Logging configuration (`logging` or `log-schema`) |
+| `global_job_kwargs` | `mp_context: forkserver` | SpikeInterface job kwargs for every step; a section's own `job_kwargs` override them. `forkserver` (or `spawn`) is needed for streamed recordings, whose S3 clients can't be forked |
 
 The schema describes every key. Parameters can be changed in three ways:
 

@@ -84,11 +84,16 @@ else {
     json_params = new groovy.json.JsonSlurper().parseText(new File("${baseDir}/default_params.json").text)
     println "Loaded parameters from DEFAULT_PARAMS"
 }
+// Params files without global_job_kwargs: use the defaults (steps without their own job_kwargs rely on them)
+if (!json_params.containsKey('global_job_kwargs')) {
+    json_params.global_job_kwargs = new groovy.json.JsonSlurper().parseText(new File("${baseDir}/default_params.json").text).global_job_kwargs
+    println "WARN: params file has no global_job_kwargs, using the defaults: ${json_params.global_job_kwargs}"
+}
 
 // Dotted CLI overrides following the JSON layout, e.g. --hybrid_generation.num_cases=2
 // (Nextflow turns them into nested maps in `params`); merged before validation so they are checked too.
 // Top-level keys are plain flags: --benchmark lossy, --existing, --sorters kilosort4,spykingcircus2
-def step_keys = ['logging', 'job_dispatch', 'hybrid_generation', 'compression', 'preprocessing', 'spikesorting', 'hybrid_evaluation']
+def step_keys = ['logging', 'global_job_kwargs', 'job_dispatch', 'hybrid_generation', 'compression', 'preprocessing', 'spikesorting', 'hybrid_evaluation']
 def top_keys = ['benchmark', 'existing', 'sessions_file', 'sorters', 'sorter', 'compression_cases', 'sorting_cases']
 def cli_overrides = [:]
 // Same overrides packed in one string, for Code Ocean (only App Panel params are forwarded), e.g.
@@ -264,11 +269,7 @@ if (existing && input_is_s3) {
     stage_input = false
 }
 println "JOB DISPATCH S3 PATH: ${full_params.job_dispatch.s3_path}"
-// shortcut: job_dispatch streaming is not wired here (hybrid_generation reads the staged session); add it if needed
-if (full_params.job_dispatch.streaming) {
-    println "WARN: job_dispatch.streaming is not supported by the hybrid benchmark: staging the session"
-    full_params.job_dispatch.streaming = false
-}
+// job_dispatch.streaming is resolved per session below (remote AIND sessions are streamed, the others staged)
 
 // Sessions: [name, path], each staged as capsule/data/<name> in every step that reads it.
 // sessions_file lists one session per line (local path or s3:// URL; lines starting with '#' or '//' are skipped), each named after its basename
@@ -422,6 +423,49 @@ used_sorters = case_list.collect { it[1].sorter }.unique()
 println "SORTING CASES: " + case_list.collect { "${it[1].case} (${it[1].sorter}, variant ${it[0]})" }.join(', ')
 println "PREPROCESSING VARIANTS: ${variant_files.size()}"
 
+// Streaming: a remote (s3://) AIND session is read from S3 by every step through the paths in its job files, and only
+// its metadata is staged (job dispatch needs data_description.json and the ecephys_clipped layout). Other sessions are
+// staged in full. Each session gets its own job_dispatch params file, with its remote_path.
+// shortcut: job dispatch parses remote_path as s3://<bucket>/<session>, so streamed sessions must sit at the bucket root
+def streaming = (staged_params.job_dispatch.streaming ?: false) && !existing
+session_params = [:]  // session name -> job_dispatch params file
+session_list = session_list.collect { name, path ->
+    def stream = streaming && staged_params.job_dispatch.input == 'aind' && (path ==~ /^\w+:\/\/.+/)
+    def dispatch_params = json_copy(staged_params)
+    dispatch_params.job_dispatch.streaming = stream
+    dispatch_params.job_dispatch.remote_path = stream ? path.replaceAll('/+$', '') : null
+    session_params[name] = write_params("session_${name}", dispatch_params)
+    println "SESSION ${name}: " + (stream ? "streamed from ${path}" : "staged from ${path}")
+    stream ? [name, aind_partial_staging(path, file("${workDir}/streaming/${name}")).toString()] : [name, path]
+}
+
+// Streaming (AIND input): copy only the small metadata of a remote session into metadata_folder:
+// - session JSONs
+// - behavior JSONs, plus a raw.harp placeholder next to them
+// - from ecephys_clipped: settings XMLs, structure.oebin, sync_messages.txt and the events/ folders
+//   (the continuous/ folders hold GBs of timestamps and are skipped)
+// Copied from aind-ephys-pipeline's main.nf.
+def aind_partial_staging(session_path, metadata_folder) {
+    def session_root = file(session_path)
+    def behavior_jsons = files("${session_path}/behavior/**.json")
+    def clipped_patterns = ['**.{csv,xml,oebin}', '**/sync_messages.txt', '**/events/**']
+    def metadata_files = files("${session_path}/*.json") + behavior_jsons +
+        ['ecephys_clipped', 'ecephys/ecephys_clipped'].collectMany { clipped ->
+            clipped_patterns.collectMany { files("${session_path}/${clipped}/${it}") }
+        }
+    metadata_folder.mkdirs()
+    metadata_files.each { f ->
+        def target = metadata_folder.resolve(session_root.relativize(f).toString())
+        // shortcut: copy only if missing, to keep mtimes stable for -resume; a changed remote file needs a clean workDir
+        if (!target.exists()) { target.parent.mkdirs(); f.copyTo(target) }
+    }
+    behavior_jsons*.parent.unique().findAll { it.resolve('raw.harp').exists() }.each { d ->
+        def marker = metadata_folder.resolve(session_root.relativize(d).toString()).resolve('raw.harp/PLACEHOLDER')
+        if (!marker.exists()) { marker.parent.mkdirs(); marker.text = 'HARP data is not staged in streaming mode\n' }
+    }
+    return metadata_folder
+}
+
 // Process definitions
 process job_dispatch {
     tag 'job-dispatch'
@@ -429,8 +473,7 @@ process job_dispatch {
     container container_name
 
     input:
-    tuple val(session_name), path(session_input, stageAs: 'session_input/*')
-    path params_file, stageAs: 'capsule/params.json'
+    tuple val(session_name), path(session_input, stageAs: 'session_input/*'), path(params_file, stageAs: 'capsule/params.json')
 
     output:
     tuple val(session_name), path('capsule/results/*'), emit: results
@@ -1052,7 +1095,7 @@ workflow {
         hybrid_flattened = dispatch_out.flattened
     } else {
         // one job_dispatch task per session, then one hybrid_generation task per job with its session
-        job_dispatch_out = job_dispatch(sessions_ch, full_params_ch)
+        job_dispatch_out = job_dispatch(sessions_ch.map { name, path -> [name, path, file(session_params[name])] })
         max_duration_minutes = maxDuration(job_dispatch_out.max_duration_file)
         generation_in = job_dispatch_out.results.flatMap { session_name, files ->
             (files instanceof List ? files : [files])
