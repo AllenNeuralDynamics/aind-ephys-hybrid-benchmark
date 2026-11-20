@@ -134,6 +134,30 @@ Currently, the pipeline supports the following input data types (`job_dispatch.i
 - `aind`: data ingestion used at AIND. The input folder must contain AIND ecephys sessions with an `ecephys` subfolder which in turn includes an `ecephys_clipped` (clipped Open Ephys folder) and an `ecephys_compressed` (compressed traces with Zarr).
 
 By default, `job_dispatch.multi_session` is `true`, so that multiple sessions can be processed in one run.
+Job dispatch then prefixes every recording name with its session name (`<session>__<recording>`), which keeps
+recordings of different sessions apart.
+
+## Sessions file
+
+Instead of one input folder, `sessions_file` (or `--sessions_file`) can point to a text file listing the sessions,
+one per line. Each line is a local path or an `s3://` URL. Lines starting with `#` or `//` are skipped, so you can comment sessions out:
+
+```
+# sessions.txt
+s3://<bucket>/ecephys_644864_2023-01-31_15-27-43
+s3://<bucket>/ecephys_649943_2023-02-14_11-03-06
+// s3://<bucket>/ecephys_666986_2023-08-16_15-12-36
+```
+
+Each entry is what you would otherwise put in the input folder: an AIND session folder, a SpikeGLX or Open Ephys
+folder, or an NWB file. It is staged under its basename, and each session gets its own job dispatch task. Hybrid
+generation, compression and preprocessing then stage only the session they read; the evaluation stages all of them.
+
+- **Staging:** Nextflow copies each S3 session in full (raw data included), so plan for the time and disk space.
+- **Names:** entries must have different basenames. For AIND input the session name comes from `data_description.json`,
+  so every session needs one.
+- **`multi_session`:** it is forced to `true`, since it is what keeps recording names unique.
+- **`existing`:** not supported; existing datasets use the input folder or `job_dispatch.s3_path`.
 
 ## Existing hybrid datasets
 
@@ -166,6 +190,7 @@ Each step reads its own section.
 | `sorter` | `kilosort4` | Sorter used after compression (`benchmark: lossy`) |
 | `compression_cases` | `["lossless", 3, 2.5, 2.25]` | `lossless` or WavPack BPS values (`benchmark: lossy`) |
 | `existing` | `false` | Start from existing hybrid datasets instead of generating them |
+| `sessions_file` | `null` | Text file listing the sessions to process (see [Sessions file](#sessions-file)) |
 | `job_dispatch` | | Job dispatch (input type, debug mode, multi-session, ...) and, for existing datasets, `max_recordings`, `s3_path`, `seed` |
 | `hybrid_generation` | | `min_amp`, `max_amp`, `min_depth_percentile`, `max_depth_percentile`, `num_units`, `num_cases`, `correct_motion` |
 | `compression` | | `bps` (`null`: lossless) and `highpass`, for cases with a `compress_wavpack` step |

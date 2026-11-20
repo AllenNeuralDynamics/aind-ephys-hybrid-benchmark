@@ -29,6 +29,14 @@
             "default": false,
             "description": "Start from existing hybrid datasets (<session>/<case>/{recording,sorting}.zarr) instead of generating them. An s3:// input is passed to job_dispatch.s3_path and not staged."
         },
+        "sessions_file": {
+            "type": [
+                "string",
+                "null"
+            ],
+            "default": null,
+            "description": "Text file listing the sessions to process, one per line (local path or s3:// URL; lines starting with '#' or '//' are skipped). Each session is staged under its basename and dispatched separately. Not supported with existing: true."
+        },
         "sorters": {
             "type": "array",
             "items": {

@@ -89,7 +89,7 @@ else {
 // (Nextflow turns them into nested maps in `params`); merged before validation so they are checked too.
 // Top-level keys are plain flags: --benchmark lossy, --existing, --sorters kilosort4,spykingcircus2
 def step_keys = ['logging', 'job_dispatch', 'hybrid_generation', 'compression', 'preprocessing', 'spikesorting', 'hybrid_evaluation']
-def top_keys = ['benchmark', 'existing', 'sorters', 'sorter', 'compression_cases', 'sorting_cases']
+def top_keys = ['benchmark', 'existing', 'sessions_file', 'sorters', 'sorter', 'compression_cases', 'sorting_cases']
 def cli_overrides = [:]
 // Same overrides packed in one string, for Code Ocean (only App Panel params are forwarded), e.g.
 // --extra_params "--benchmark=lossy --hybrid_generation.num_cases=2 --spikesorting.kilosort4.sorter.batch_size=30000"
@@ -270,6 +270,38 @@ if (full_params.job_dispatch.streaming) {
     full_params.job_dispatch.streaming = false
 }
 
+// Sessions: [name, path], each staged as capsule/data/<name> in every step that reads it.
+// sessions_file lists one session per line (local path or s3:// URL; lines starting with '#' or '//' are skipped), each named after its basename
+// and dispatched in its own job_dispatch task. Otherwise the input is one session named ecephys_session.
+def sessions_file = full_params.sessions_file
+if (sessions_file) {
+    if (existing) {
+        error "sessions_file is not supported with existing: true (use job_dispatch.s3_path or the input folder)"
+    }
+    def lines = file(sessions_file, checkIfExists: true).readLines()*.trim().findAll { it && !it.startsWith('#') && !it.startsWith('//') }
+    if (!lines) {
+        error "sessions_file ${sessions_file} lists no sessions"
+    }
+    session_list = lines.collect { [file(it).name, it] }
+    def duplicates = session_list.countBy { it[0] }.findAll { k, v -> v > 1 }.keySet()
+    if (duplicates) {
+        error "sessions_file ${sessions_file}: sessions must have different folder/file names, repeated: ${duplicates}"
+    }
+    // the session name job dispatch prepends to each recording name keeps recordings of different sessions apart
+    if (!full_params.job_dispatch.multi_session) {
+        println "WARN: job_dispatch.multi_session is required with sessions_file: setting it to true"
+        full_params.job_dispatch.multi_session = true
+    }
+} else if (stage_input) {
+    session_list = [['ecephys_session', params.ecephys_path.toString()]]
+} else {
+    // existing datasets on S3 are read from job_dispatch.s3_path: stage a placeholder in place of the session
+    def placeholder = file("${workDir}/no_session/NO_SESSION.txt")
+    if (!placeholder.exists()) { placeholder.parent.mkdirs(); placeholder.text = 'Data is read from job_dispatch.s3_path\n' }
+    session_list = [['ecephys_session', placeholder.parent.toString()]]
+}
+println "SESSIONS: " + session_list.collect { name, path -> "${name} (${path})" }.join(', ')
+
 // Tag logs with the acquisition name from data_description.json and the pipeline name;
 // values set by the user in the params file take priority
 full_params.logging = full_params.logging ?: [:]
@@ -298,8 +330,9 @@ println "Logging acquisition_name: ${full_params.logging.acquisition_name}"
 def full_params_file = new File("${workDir}/full_params.json")
 full_params_file.parentFile.mkdirs()
 // Rewrite only on change: tasks hash the staged file's mtime, so touching it would invalidate -resume
-// The keys choosing the sorting cases are not staged: adding a case must not rerun dispatch/generation or other cases
-def case_selection_keys = ['benchmark', 'sorters', 'sorter', 'compression_cases', 'sorting_cases']
+// The keys choosing the inputs and sorting cases are not staged (no step reads them):
+// adding a case must not rerun dispatch/generation or other cases
+def case_selection_keys = ['sessions_file', 'benchmark', 'sorters', 'sorter', 'compression_cases', 'sorting_cases']
 staged_params = full_params.findAll { k, v -> !(k in case_selection_keys) }
 def full_params_text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(staged_params))
 if (!full_params_file.exists() || full_params_file.text != full_params_text) {
@@ -396,11 +429,11 @@ process job_dispatch {
     container container_name
 
     input:
-    path input_folder, stageAs: 'capsule/data/ecephys_session'
+    tuple val(session_name), path(session_input, stageAs: 'session_input/*')
     path params_file, stageAs: 'capsule/params.json'
 
     output:
-    path 'capsule/results/*', emit: results
+    tuple val(session_name), path('capsule/results/*'), emit: results
     path 'max_duration.txt', emit: max_duration_file  // file containing the value
 
     script:
@@ -418,6 +451,8 @@ process job_dispatch {
     mkdir -p capsule/data
     mkdir -p capsule/results
     mkdir -p capsule/scratch
+    # the session keeps the name job dispatch saw: recording paths in the job files are relative to capsule/data
+    mv "${session_input}" "capsule/data/${session_name}"
 
     if [[ ${params.executor} == "slurm" ]]; then
         echo "[${task.tag}] allocated task time: ${task.time}"
@@ -452,7 +487,7 @@ process job_dispatch_hybrid {
     container container_name
 
     input:
-    path input_folder, stageAs: 'capsule/data/ecephys_session'
+    tuple val(session_name), path(session_input, stageAs: 'session_input/*')
     path params_file, stageAs: 'capsule/params.json'
 
     output:
@@ -475,6 +510,8 @@ process job_dispatch_hybrid {
     mkdir -p capsule/data
     mkdir -p capsule/results
     mkdir -p capsule/scratch
+    # the session keeps the name job dispatch saw: recording paths in the job files are relative to capsule/data
+    mv "${session_input}" "capsule/data/${session_name}"
 
     if [[ ${params.executor} == "slurm" ]]; then
         echo "[${task.tag}] allocated task time: ${task.time}"
@@ -509,12 +546,11 @@ process hybrid_generation {
 
     input:
     val max_duration_minutes
-    path job_json, stageAs: 'capsule/data/*'
-    path ecephys_session_input, stageAs: 'capsule/data/ecephys_session'
+    tuple val(session_name), path(job_json, stageAs: 'capsule/data/*'), path(session_input, stageAs: 'session_input/*')
     path params_file, stageAs: 'capsule/params.json'
 
     output:
-    path 'capsule/results/recordings/*', emit: recordings
+    tuple val(session_name), path('capsule/results/recordings/*'), emit: recordings
     path 'capsule/results/flattened/*', emit: flattened
 
     script:
@@ -532,6 +568,8 @@ process hybrid_generation {
     mkdir -p capsule/data
     mkdir -p capsule/results
     mkdir -p capsule/scratch
+    # the session keeps the name job dispatch saw: recording paths in the job files are relative to capsule/data
+    mv "${session_input}" "capsule/data/${session_name}"
 
     if [[ ${params.executor} == "slurm" ]]; then
         echo "[${task.tag}] allocated task time: ${task.time}"
@@ -560,8 +598,7 @@ process compress_wavpack {
 
     input:
     val max_duration_minutes
-    tuple val(meta), path(job_files, stageAs: 'capsule/data/*'), path(params_file, stageAs: 'capsule/params.json')
-    path ecephys_session_input, stageAs: 'capsule/data/ecephys_session'
+    tuple val(meta), path(job_files, stageAs: 'capsule/data/*'), path(params_file, stageAs: 'capsule/params.json'), path(session_input, stageAs: 'session_input/*')
 
     output:
     tuple val(meta), path('capsule/results/*', arity: '1..*'), emit: results
@@ -581,6 +618,8 @@ process compress_wavpack {
     mkdir -p capsule/data
     mkdir -p capsule/results
     mkdir -p capsule/scratch
+    # the session keeps the name job dispatch saw: recording paths in the job files are relative to capsule/data
+    mv "${session_input}" "capsule/data/${meta.session}"
     # hybrid recordings refer to their GT sorting as ../scratch/gt_<id>: move the staged gt_<id> folders there
     for gt_folder in capsule/data/gt_*; do if [ -e "\$gt_folder" ]; then mv "\$gt_folder" capsule/scratch/; fi; done
 
@@ -610,8 +649,7 @@ process preprocessing {
 
     input:
     val max_duration_minutes
-    tuple val(meta), path(job_files, stageAs: 'capsule/data/*'), path(params_file, stageAs: 'capsule/params.json')
-    path ecephys_session_input, stageAs: 'capsule/data/ecephys_session'
+    tuple val(meta), path(job_files, stageAs: 'capsule/data/*'), path(params_file, stageAs: 'capsule/params.json'), path(session_input, stageAs: 'session_input/*')
 
     output:
     tuple val(meta), path('capsule/results/*', arity: '1..*'), emit: results
@@ -631,6 +669,8 @@ process preprocessing {
     mkdir -p capsule/data
     mkdir -p capsule/results
     mkdir -p capsule/scratch
+    # the session keeps the name job dispatch saw: recording paths in the job files are relative to capsule/data
+    mv "${session_input}" "capsule/data/${meta.session}"
     # hybrid recordings refer to their GT sorting as ../scratch/gt_<id>: move the staged gt_<id> folders there
     for gt_folder in capsule/data/gt_*; do if [ -e "\$gt_folder" ]; then mv "\$gt_folder" capsule/scratch/; fi; done
 
@@ -885,7 +925,8 @@ process hybrid_evaluation {
 
     input:
     val max_duration_minutes
-    path ecephys_session_input, stageAs: 'capsule/data/ecephys_session'
+    val session_names                                                       // one session name per staged input below
+    path session_inputs, stageAs: 'session_input/in*/*'                     // in1, in2, ... in list order
     path hybrid_flattened, stageAs: 'capsule/data/*'
     val sorting_cases                                                       // one case name per staged file below
     path sorting_results, stageAs: 'capsule/data/sorting_inputs/in*/*'      // in1, in2, ... in list order
@@ -915,6 +956,13 @@ process hybrid_evaluation {
     fi
     # Make sure N_JOBS matches allocated CPUs
     export N_JOBS_EXT=${params.get('n_jobs') ?: task.cpus}
+
+    # the sessions keep the names job dispatch saw: recording paths in the job files are relative to capsule/data
+    i=1
+    for session_name in ${session_names.collect { "'" + it + "'" }.join(' ')}; do
+        mv session_input/in\$i/* "capsule/data/\$session_name"
+        i=\$((i + 1))
+    done
 
     # the evaluation expects one folder per sorting case: capsule/data/<case>/spikesorted_*
     echo "[${task.tag}] staging sorting cases..."
@@ -967,14 +1015,9 @@ PROVENANCE_EOF
 
 workflow {
     full_params_ch = Channel.value(file(full_params_file.toString()))
-    if (stage_input) {
-        ecephys_ch = Channel.fromPath(params.ecephys_path + "/", type: 'any')
-    } else {
-        // the data is read from job_dispatch.s3_path: stage a placeholder in place of the session
-        def placeholder = file("${workDir}/no_session/NO_SESSION.txt")
-        if (!placeholder.exists()) { placeholder.parent.mkdirs(); placeholder.text = 'Data is read from job_dispatch.s3_path\n' }
-        ecephys_ch = Channel.fromPath(placeholder.parent.toString() + "/", type: 'any')
-    }
+    // session name -> staged path (local or s3://); each task stages only the session it reads
+    def session_paths = session_list.collectEntries { name, path -> [(name): file(path, checkIfExists: true)] }
+    sessions_ch = Channel.fromList(session_list.collect { name, path -> [name, session_paths[name]] })
 
     // Provenance: dispatch/generation/evaluation pins, plus each sorting case's resolved steps
     def used_steps = (existing ? ['job_dispatch_hybrid'] : ['job_dispatch', 'hybrid_generation']) + ['hybrid_evaluation']
@@ -1000,16 +1043,23 @@ workflow {
     save_provenance(groovy.json.JsonOutput.toJson(provenance))
 
     // Hybrid recordings: generated, or listed from existing hybrid datasets
+    // the longest recording over all sessions (one value, used for the SLURM time limits)
+    def maxDuration = { files -> files.toList().map { fs -> fs.collect { it.text.trim().toBigDecimal() }.max().toString() } }
     if (existing) {
-        dispatch_out = job_dispatch_hybrid(ecephys_ch.collect(), full_params_ch)
-        max_duration_minutes = dispatch_out.max_duration_file.map { it.text.trim() }
-        hybrid_recordings = dispatch_out.recordings
+        dispatch_out = job_dispatch_hybrid(sessions_ch, full_params_ch)
+        max_duration_minutes = maxDuration(dispatch_out.max_duration_file)
+        hybrid_recordings = dispatch_out.recordings.map { files -> [session_list[0][0], files] }
         hybrid_flattened = dispatch_out.flattened
     } else {
-        job_dispatch_out = job_dispatch(ecephys_ch.collect(), full_params_ch)
-        max_duration_minutes = job_dispatch_out.max_duration_file.map { it.text.trim() }
-        job_jsons = job_dispatch_out.results.flatten().filter { it.name.startsWith('job') && it.name.endsWith('.json') }
-        generation_out = hybrid_generation(max_duration_minutes, job_jsons, ecephys_ch.collect(), full_params_ch)
+        // one job_dispatch task per session, then one hybrid_generation task per job with its session
+        job_dispatch_out = job_dispatch(sessions_ch, full_params_ch)
+        max_duration_minutes = maxDuration(job_dispatch_out.max_duration_file)
+        generation_in = job_dispatch_out.results.flatMap { session_name, files ->
+            (files instanceof List ? files : [files])
+                .findAll { it.name.startsWith('job') && it.name.endsWith('.json') }
+                .collect { [session_name, it, session_paths[session_name]] }
+        }
+        generation_out = hybrid_generation(max_duration_minutes, generation_in, full_params_ch)
         hybrid_recordings = generation_out.recordings
         hybrid_flattened = generation_out.flattened
     }
@@ -1018,30 +1068,29 @@ workflow {
     // [meta, files]: a job file plus, for generated recordings, the gt_<id> GT sorting folder the hybrid recording
     // refers to (they are staged together). The id comes from the file names because generated jobs are pickles
     streams = hybrid_recordings
-        .flatMap { files ->
+        .flatMap { session_name, files ->
             (files instanceof List ? files : [files])
                 .findAll { it.name.startsWith('job_') || it.name.startsWith('gt_') }
                 .groupBy { it.name.replaceFirst(/^(job|gt)_/, '').replaceFirst(/\.(json|pkl|pickle)$/, '') }
-                .collect { id, id_files -> [[id: id], id_files] }
+                .collect { id, id_files -> [[id: id, session: session_name], id_files] }
         }
 
     // One item per stream and variant (shared compression + preprocessing), with the variant's params file
+    // and the session the hybrid recording is built on
     stream_variants = streams
         .combine(Channel.fromList(variant_metas.values().toList()))
-        .map { meta, job, vmeta -> [meta + vmeta, job, file(variant_files[vmeta.variant])] }
+        .map { meta, job, vmeta -> [meta + vmeta, job, file(variant_files[vmeta.variant]), session_paths[meta.session]] }
     compress_out = compress_wavpack(
         max_duration_minutes,
-        stream_variants.filter { meta, job, pfile -> meta.compress },
-        ecephys_ch.collect()
+        stream_variants.filter { meta, job, pfile, session -> meta.compress }
     )
     preprocessing_in = stream_variants
-        .filter { meta, job, pfile -> !meta.compress }
-        .mix(compress_out.results.map { meta, files -> [meta, files, file(variant_files[meta.variant])] })
+        .filter { meta, job, pfile, session -> !meta.compress }
+        .mix(compress_out.results.map { meta, files -> [meta, files, file(variant_files[meta.variant]), session_paths[meta.session]] })
 
     preprocessing_out = preprocessing(
         max_duration_minutes,
-        preprocessing_in,
-        ecephys_ch.collect()
+        preprocessing_in
     )
 
     // Streams whose preprocessing wrote error.txt: don't launch sorting for them
@@ -1083,7 +1132,8 @@ workflow {
         .toList()
     hybrid_evaluation(
         max_duration_minutes,
-        ecephys_ch.collect(),
+        session_list.collect { it[0] },
+        session_list.collect { session_paths[it[0]] },
         hybrid_flattened.flatten().collect(),
         sorting_pairs.map { pairs -> pairs.collect { it[0] } },
         sorting_pairs.map { pairs -> pairs.collect { it[1] } },

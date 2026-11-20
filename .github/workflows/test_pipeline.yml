@@ -24,6 +24,8 @@ jobs:
             script: tests/test_pipeline_existing.sh
           - name: Custom sorting cases
             script: tests/test_pipeline_cases.sh
+          - name: Sessions file
+            script: tests/test_pipeline_sessions.sh
 
     steps:
       - name: Checkout repository

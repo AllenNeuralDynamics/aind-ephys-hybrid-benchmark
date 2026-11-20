@@ -2,6 +2,7 @@
     "pipeline_version": "1.5.0",
     "benchmark": "sorters",
     "existing": false,
+    "sessions_file": null,
     "sorters": [
         "kilosort4",
         "spykingcircus2"
